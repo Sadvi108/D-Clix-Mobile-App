@@ -212,7 +212,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
               final code = capture.barcodes.map((b) => b.rawValue ?? '').firstWhere((v) => v.isNotEmpty, orElse: () => '');
               if (code.isNotEmpty) _submit(code);
             },
-            errorBuilder: (_, __, ___) {
+            errorBuilder: (_, __) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted && !_cameraFailed) setState(() => _cameraFailed = true);
               });

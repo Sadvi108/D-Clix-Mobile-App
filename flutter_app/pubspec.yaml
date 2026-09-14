@@ -37,7 +37,7 @@ dependencies:
   percent_indicator: ^4.2.4
 
   # QR (when you wire up the real scanner)
-  mobile_scanner: ^5.2.3
+  mobile_scanner: ^7.4.2
 
   # Persistence (theme choice, etc.)
   shared_preferences: ^2.3.3
