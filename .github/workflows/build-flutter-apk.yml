@@ -37,10 +37,43 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Test
         run: flutter test
-      - name: Build release-mode test APK
-        # No production signing key is configured. This APK is debug-signed and
-        # cannot be assumed to update a previous Expo/Flutter installation.
-        run: flutter build apk --release
+      - name: Configure release signing
+        # Secrets are documented in docs/android-signing.md. Without them (pull requests,
+        # repositories that have not added the key yet) the build is debug-signed.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::warning::Android signing secrets are not set; building a debug-signed APK."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          {
+            printf 'storeFile=upload-keystore.jks\n'
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
+      - name: Build release APK and app bundle
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+      - name: Check signing key
+        # Release tags must never publish a debug-signed build: it cannot be uploaded to
+        # Play and cannot update an installation signed with the upload key.
+        run: |
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | tee /tmp/apk-cert.txt
+          if grep -q 'CN=Android Debug' /tmp/apk-cert.txt; then
+            if [[ "$GITHUB_REF" == refs/tags/flutter-v* ]]; then
+              echo "::error::Release tag built with the debug key. Add the Android signing secrets (docs/android-signing.md)."
+              exit 1
+            fi
+            echo "::warning::APK is debug-signed."
+          fi
       - name: Verify packaged resources and calculate checksum
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
@@ -52,14 +85,16 @@ jobs:
           # missing hostname SAN. UAT checkout still needs a valid server certificate.
           grep -q uat_apimacuat /tmp/apk-resources.txt
           grep -qE '\.pem$' /tmp/apk-files.txt
-          cd build/app/outputs/flutter-apk
+          mkdir -p build/release
+          cp build/app/outputs/flutter-apk/app-release.apk build/release/
+          cp build/app/outputs/bundle/release/app-release.aab build/release/
+          cd build/release
           sha256sum app-release.apk > app-release.apk.sha256
+          sha256sum app-release.aab > app-release.aab.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: dclix-flutter-apk
-          path: |
-            flutter_app/build/app/outputs/flutter-apk/app-release.apk
-            flutter_app/build/app/outputs/flutter-apk/app-release.apk.sha256
+          path: flutter_app/build/release/
           if-no-files-found: error
 
   release:
@@ -74,11 +109,19 @@ jobs:
         with:
           name: dclix-flutter-apk
           path: release-apk
-      - name: Publish test APK with verification limits
+      - name: Detect pre-release tag
+        # Suffixed versions such as flutter-v2.14.0-beta.1 publish as pre-releases.
+        id: channel
+        run: |
+          case "${GITHUB_REF_NAME#flutter-v}" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Publish signed APK and app bundle
         uses: softprops/action-gh-release@v2
         with:
           files: release-apk/*
           tag_name: ${{ github.ref_name }}
-          name: D-CLIX Flutter ${{ github.ref_name }} (test APK)
+          name: D-CLIX Flutter ${{ github.ref_name }}
           body_path: docs/releases/${{ github.ref_name }}.md
-          prerelease: true
+          prerelease: ${{ steps.channel.outputs.prerelease }}
