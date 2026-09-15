@@ -87,7 +87,8 @@ const _expected = <String, List<String>>{
     'profileSend2ClubHelpDesk'
   ],
   'outstanding_invoices_screen': ['outstandingFetch'],
-  'progress_screen': ['attendanceReport', 'gradingSchedule'],
+  'progress_screen': ['attendanceReport'],
+  'belt_rank_screen': ['myInfo'],
   'training_screen': ['myInfo', 'attendanceReport'],
   'purchases_screen': ['purchaseRequests'],
   'rn_reports': ['reportStudentCenters', 'attendanceReport', 'tournamentSummary'],

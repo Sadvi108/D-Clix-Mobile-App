@@ -289,7 +289,7 @@ const kGuideSteps = <GuideStep>[
       GuideDetail(2, 'Payments',
           'Fees due, payment history, outstanding invoices, purchase requests and your past purchases.'),
       GuideDetail(3, 'Progress and club',
-          'Progress reports, belt and grading, plus events, competitions, offers, chat and the help desk.'),
+          'Your progress report and belt / rank, plus events, competitions, offers, chat and the help desk.'),
       GuideDetail(4, 'Account',
           'Profile, student details, edit profile, notification settings and this guide.'),
     ],

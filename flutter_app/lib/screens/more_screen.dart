@@ -40,8 +40,7 @@ class MoreScreen extends StatelessWidget {
       title: 'Progress',
       items: [
         (id: 'progress', label: 'Progress Report', icon: Ion.trendingUp, color: Color(0xFF6366F1), route: '/progress'),
-        (id: 'belt', label: 'Belt / Rank', icon: Ion.ribbon, color: Color(0xFFEAB308), route: '/progress'),
-        (id: 'grading', label: 'Grading', icon: Ion.school, color: Color(0xFFDB2777), route: '/progress'),
+        (id: 'belt', label: 'Belt / Rank', icon: Ion.ribbon, color: Color(0xFFEAB308), route: '/belt-rank'),
       ],
     ),
     (

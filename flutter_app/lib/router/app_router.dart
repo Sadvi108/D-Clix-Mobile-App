@@ -16,6 +16,7 @@ import '../screens/chat_screen.dart';
 import '../screens/chat_thread_screen.dart';
 import '../screens/more_screen.dart';
 import '../screens/autopay_screen.dart';
+import '../screens/belt_rank_screen.dart';
 import '../screens/competition_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/helpdesk_screen.dart';
@@ -282,6 +283,10 @@ final GoRouter appRouter = GoRouter(
         path: '/user-guide',
         pageBuilder: (_, s) =>
             _fadeThrough(s.pageKey, const UserGuideScreen())),
+    GoRoute(
+        path: '/belt-rank',
+        pageBuilder: (_, s) =>
+            _fadeThrough(s.pageKey, const BeltRankScreen())),
     GoRoute(
         path: '/competition',
         pageBuilder: (_, s) =>
