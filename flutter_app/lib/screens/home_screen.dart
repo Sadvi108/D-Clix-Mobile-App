@@ -119,15 +119,17 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
         );
     Widget statSep() => Container(width: 1, height: 36, color: const Color(0x40FFFFFF));
 
+    // One rounded block from the status bar down. A square orange backing behind the rounded
+    // gradient used to fill the bottom corners back in, so they looked square.
     final header = Container(
-      color: c.primary,
       padding: EdgeInsets.only(top: top),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+        boxShadow: Shadows.soft(c),
+      ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, 30),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-        ),
         child: Column(children: [
           Padding(
             padding: const EdgeInsets.only(top: 6),
@@ -333,48 +335,58 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                       TextButton(onPressed: session.dismissStoreVersionBanner, child: const Text('Dismiss')),
                     ],
                   ),
-                // Pulled up under the header's rounded edge.
-                Transform.translate(
-                  offset: const Offset(0, -20),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: Gaps.xl),
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: BorderRadius.circular(Radii.xl),
-                      boxShadow: Shadows.shade(c),
-                      border: c.isDark ? Border.all(color: c.border) : null,
-                    ),
-                    child: Row(children: [
-                      for (final q in topQuick)
-                        Expanded(
+                // Shortcuts as individual rounded cards. They used to sit in one panel pulled 20pt up
+                // under the header, where the list viewport clipped its top edge flat.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.lg, Gaps.xl, 0),
+                  child: Row(children: [
+                    for (final (i, q) in topQuick.indexed) ...[
+                      if (i > 0) const SizedBox(width: Gaps.sm),
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          label: q.label,
+                          excludeSemantics: true,
                           child: Touchable(
                             onPress: () => openRoute(context, q.route),
                             activeOpacity: 0.7,
-                            child: Column(children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                margin: const EdgeInsets.only(bottom: 6),
-                                decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-                                child: Icon(q.icon, size: 22, color: c.primary),
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(4, 12, 4, 10),
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                borderRadius: BorderRadius.circular(Radii.lg),
+                                boxShadow: Shadows.soft(c),
+                                border: Border.all(color: c.isDark ? c.border : c.borderLight),
                               ),
-                              Text(q.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 9.5, color: c.textPrimary, fontWeight: FontWeight.w600)),
-                            ]),
+                              child: Column(children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  decoration: BoxDecoration(
+                                    color: c.primary.hexA(c.isDark ? '2E' : '17'),
+                                    borderRadius: BorderRadius.circular(Radii.md),
+                                  ),
+                                  child: Icon(q.icon, size: 21, color: c.primary),
+                                ),
+                                // Scale a long label ("Attendance") down to fit rather than cutting it off.
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(q.label,
+                                      maxLines: 1,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontSize: 11, color: c.textPrimary, fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
+                            ),
                           ),
                         ),
-                    ]),
-                  ),
+                      ),
+                    ],
+                  ]),
                 ),
 
-                Transform.translate(
-                  offset: const Offset(0, -20),
-                  child: Padding(
+                Padding(
                     padding: const EdgeInsets.fromLTRB(Gaps.xl, 18, Gaps.xl, 0),
                     child: Touchable(
                       onPress: () => context.go('/payments'),
@@ -439,11 +451,8 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                       ),
                     ),
                   ),
-                ),
 
-                Transform.translate(
-                  offset: const Offset(0, -20),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     sectionHead("Today's Class", link: 'See all', onLink: () => context.go('/schedule')),
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: Gaps.xl),
@@ -566,7 +575,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                       ),
                     ],
                   ]),
-                ),
               ],
             ),
           ),

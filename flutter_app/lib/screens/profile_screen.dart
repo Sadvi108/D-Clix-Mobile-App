@@ -205,15 +205,17 @@ class _ProfileScreenState extends State<ProfileScreen>
         padding: EdgeInsets.only(bottom: tabBarHeight + 24),
         children: [
           // Gradient header
+          // One rounded block from the status bar down; a square orange backing used to fill the
+          // rounded bottom corners back in.
           Container(
-            color: c.primary,
             padding: EdgeInsets.only(top: top),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+              boxShadow: Shadows.soft(c),
+            ),
             child: Container(
               padding: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, 56),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-              ),
               child: Column(children: [
                 Padding(
                   padding: const EdgeInsets.only(top: 6),

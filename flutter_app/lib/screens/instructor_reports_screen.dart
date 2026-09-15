@@ -39,15 +39,17 @@ class InstructorReportsScreen extends StatelessWidget {
     return ColoredBox(
       color: c.background,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // One rounded block from the status bar down; a square orange backing used to fill the
+        // rounded bottom corners back in.
         Container(
-          color: c.primary,
           padding: EdgeInsets.only(top: top),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+            boxShadow: Shadows.soft(c),
+          ),
           child: Container(
             padding: const EdgeInsets.fromLTRB(Gaps.xl, 6, Gaps.xl, 24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-            ),
             child: const Row(children: [
               SizedBox(
                 width: 44,
