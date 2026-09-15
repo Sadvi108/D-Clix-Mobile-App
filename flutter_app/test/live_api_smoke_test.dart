@@ -97,7 +97,7 @@ void main() {
       await probe('attendance', '/Reports/Attendance', () => Api.reportsAttendance());
       await probe('progress', '/Reports/GradingSchedule',
           () => Api.reportsGradingSchedule());
-      await probe('competition', '/Reports/TournamentSummary',
+      await probe('tournament', '/Reports/TournamentSummary',
           () => Api.reportsTournamentSummary());
       await probe('purchases', '/Reports/PurchaseRequests',
           () => Api.reportsPurchaseRequests());

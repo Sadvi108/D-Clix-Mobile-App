@@ -16,7 +16,7 @@ import 'package:dclix_app/screens/attendance_screen.dart';
 import 'package:dclix_app/screens/autopay_screen.dart';
 import 'package:dclix_app/screens/book_class_screen.dart';
 import 'package:dclix_app/screens/chat_screen.dart';
-import 'package:dclix_app/screens/competition_screen.dart';
+import 'package:dclix_app/screens/tournament_screen.dart';
 import 'package:dclix_app/screens/helpdesk_screen.dart';
 import 'package:dclix_app/screens/login_screen.dart';
 import 'package:dclix_app/screens/more_screen.dart';
@@ -142,7 +142,7 @@ void main() {
   testWidgets('more', (t) => check(t, 'more', const MoreScreen()));
   testWidgets('progress', (t) => check(t, 'progress', const ProgressScreen()));
   testWidgets('offers', (t) => check(t, 'offers', const OffersScreen()));
-  testWidgets('competition', (t) => check(t, 'competition', const CompetitionScreen()));
+  testWidgets('tournament', (t) => check(t, 'tournament', const TournamentScreen()));
   testWidgets('helpdesk', (t) => check(t, 'helpdesk', const HelpDeskScreen()));
   testWidgets('purchases', (t) => check(t, 'purchases', const PurchasesScreen()));
   testWidgets('purchase-req',

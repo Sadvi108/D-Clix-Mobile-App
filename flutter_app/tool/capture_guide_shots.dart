@@ -30,7 +30,7 @@ import 'package:dclix_app/screens/attendance_screen.dart';
 import 'package:dclix_app/screens/autopay_screen.dart';
 import 'package:dclix_app/screens/book_class_screen.dart';
 import 'package:dclix_app/screens/chat_screen.dart';
-import 'package:dclix_app/screens/competition_screen.dart';
+import 'package:dclix_app/screens/tournament_screen.dart';
 import 'package:dclix_app/screens/helpdesk_screen.dart';
 import 'package:dclix_app/screens/home_screen.dart';
 import 'package:dclix_app/screens/instructor_home_screen.dart';
@@ -380,7 +380,7 @@ void main() {
   testWidgets('offers', (t) => _shot(t, 'offers', const OffersScreen()),
       skip: skipShots);
   testWidgets(
-      'competition', (t) => _shot(t, 'competition', const CompetitionScreen()),
+      'tournament', (t) => _shot(t, 'tournament', const TournamentScreen()),
       skip: skipShots);
   testWidgets('helpdesk', (t) => _shot(t, 'helpdesk', const HelpDeskScreen()),
       skip: skipShots);

@@ -27,7 +27,7 @@ const List<QuickTile> kStudentQuickCards = [
   (id: 'progress', label: 'Progress Report', icon: Ion.trendingUp, color: Color(0xFF6366F1), route: '/progress'),
   (id: 'belt', label: 'Belt / Rank', icon: Ion.ribbon, color: Color(0xFFEAB308), route: '/belt-rank'),
   (id: 'events', label: 'Events', icon: Ion.calendar, color: Color(0xFFF97316), route: '/events'),
-  (id: 'competition', label: 'Competition', icon: Ion.medal, color: Color(0xFFDB2777), route: '/competition'),
+  (id: 'tournament', label: 'Tournament', icon: Ion.trophy, color: Color(0xFFDB2777), route: '/tournament'),
   (id: 'purchase', label: 'Purchase Request', icon: Ion.bagHandle, color: Color(0xFFF59E0B), route: '/purchase-request'),
   (id: 'chat', label: 'Chat Academy', icon: Ion.chatbubbles, color: Color(0xFF22C55E), route: '/chat'),
   (id: 'more', label: 'More', icon: Ion.grid, color: Color(0xFF64748B), route: '/more'),

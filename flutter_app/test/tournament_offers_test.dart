@@ -1,6 +1,6 @@
-// Parsing for the Competition and Offers screens.
+// Parsing for the Tournament and Offers screens.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:dclix_app/screens/competition_screen.dart';
+import 'package:dclix_app/screens/tournament_screen.dart';
 import 'package:dclix_app/screens/offers_screen.dart';
 
 void main() {
@@ -57,6 +57,21 @@ void main() {
     test('a junk payload is an empty list, not a crash', () {
       expect(parseTournaments(null), isEmpty);
       expect(parseTournaments({'data': 'nope'}), isEmpty);
+    });
+  });
+
+  group('tournamentTotals', () {
+    test('adds medals and players across rows', () {
+      final t = tournamentTotals(parseTournaments([
+        {'gender': 'Male', 'playerCount': 3, 'medalGold': 1, 'medalSilver': 2, 'medalBronze': 0},
+        {'gender': 'Female', 'playerCount': 2, 'medalGold': 0, 'medalSilver': 1, 'medalBronze': 4},
+      ]));
+      expect((t.gold, t.silver, t.bronze, t.players), (1, 3, 4, 5));
+    });
+
+    test('no rows is all zero', () {
+      final t = tournamentTotals(const []);
+      expect((t.gold, t.silver, t.bronze, t.players), (0, 0, 0, 0));
     });
   });
 

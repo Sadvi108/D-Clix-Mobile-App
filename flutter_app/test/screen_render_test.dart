@@ -17,6 +17,7 @@ import 'package:dclix_app/screens/offer_detail_screen.dart';
 import 'package:dclix_app/screens/offers_screen.dart';
 import 'package:dclix_app/screens/progress_screen.dart';
 import 'package:dclix_app/screens/student_details_screen.dart';
+import 'package:dclix_app/screens/tournament_screen.dart';
 import 'package:dclix_app/screens/user_guide_screen.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/user_session.dart';
@@ -253,6 +254,39 @@ void main() {
       expect(find.text('ATTENDANCE RATE'), findsNothing);
       expect(find.text('Upcoming Grading'), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('TournamentScreen', () {
+    late http.Client original;
+    setUp(() => original = ApiService.client);
+    tearDown(() => ApiService.client = original);
+
+    testWidgets('shows real medal totals and no invented Upcoming or Past status', (tester) async {
+      ApiService.client = _api({
+        '/Reports/TournamentSummary': [
+          {'id': 1, 'name': '', 'gender': 'Male', 'playerCount': 3, 'medalGold': 2, 'medalSilver': 1, 'medalBronze': 0},
+          {'id': 2, 'name': '', 'gender': 'Female', 'playerCount': 2, 'medalGold': 1, 'medalSilver': 0, 'medalBronze': 1},
+        ],
+      });
+      await tester.pumpWidget(_wrap(const TournamentScreen()));
+      await _settle(tester);
+      expect(find.text('Tournament'), findsOneWidget);
+      expect(find.text('Male'), findsOneWidget);
+      expect(find.text('Female'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget, reason: 'total players');
+      expect(find.textContaining('Upcoming'), findsNothing);
+      expect(find.text('UPCOMING'), findsNothing);
+      expect(find.text('COMPLETED'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an empty summary says no results, not "no upcoming tournaments"', (tester) async {
+      ApiService.client = _api({'/Reports/TournamentSummary': []});
+      await tester.pumpWidget(_wrap(const TournamentScreen()));
+      await _settle(tester);
+      expect(find.text('No tournament results yet'), findsOneWidget);
+      expect(find.textContaining('scheduled'), findsNothing);
     });
   });
 }

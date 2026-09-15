@@ -7,6 +7,7 @@ import '../../services/rn_api.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/ion.dart';
 import '../../utils/qr_content.dart';
+import '../../utils/training_schedule.dart';
 import '../../widgets/report_kit.dart';
 import '../../widgets/rn_kit.dart';
 import '../../widgets/use_api.dart';
@@ -207,39 +208,44 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
   final _ic = TextEditingController();
   final _qr = TextEditingController();
 
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
-  // Load every center's students up-front (parallel) so the full roster shows without searching.
+  List<Row_> _centerList = const [];
+  List<String> _failed = const [];
+
+  // Every centre's students, loaded in parallel so the full roster shows without searching.
+  // The centre list is part of the same load: waiting on a separate centres request left the
+  // screen spinning forever when that request failed.
   late final _students = useApi<List<Row_>>(() async {
-    final list = _centers.data ?? await RnApi.dropdownListByType(3);
+    final list = await RnApi.dropdownListByType(3);
+    final failed = <String>[];
     final perCenter = await Future.wait(list.map((c) async {
       try {
         final rows = await RnApi.studentListByTcId(RnApi.number(c['id']).toInt());
         return [for (final s in rows) {...s, 'centerName': c['text'], 'centerId': c['id']}];
       } catch (_) {
+        failed.add('${c['text'] ?? c['id']}');
         return const <Row_>[];
       }
     }));
+    if (mounted) {
+      setState(() {
+        _centerList = list;
+        _failed = failed;
+      });
+    }
     return perCenter.expand((x) => x).toList();
-  }, autoRun: false);
+  });
 
   @override
   void initState() {
     super.initState();
-    _centers.addListener(_onCenters);
+    _students;
     for (final t in [_name, _ic, _qr]) {
       t.addListener(() => setState(() {}));
     }
   }
 
-  void _onCenters() {
-    if (!_centers.loading && _centers.data != null && _students.data == null && !_students.loading) {
-      _students.reload();
-    }
-  }
-
   @override
   void dispose() {
-    _centers.removeListener(_onCenters);
     _name.dispose();
     _ic.dispose();
     _qr.dispose();
@@ -306,19 +312,18 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
             QrContent.student(id).toLowerCase() == q;
       }).toList();
     }
-    final loading = _centers.loading || _students.loading || (_students.data == null && _students.error == null);
+    final loading = _students.data == null && _students.error == null;
     final anyFilter = '$_centerId'.isNotEmpty || n.isNotEmpty || i.isNotEmpty || q.isNotEmpty;
 
     Widget centered(Widget child) => Center(child: Padding(padding: const EdgeInsets.all(40), child: child));
     Widget body;
     if (loading) {
       body = Center(child: SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3, color: c.primary)));
-    } else if (_students.error != null) {
-      body = centered(Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Ion.alertCircleOutline, size: 44, color: c.danger),
-        const SizedBox(height: 10),
-        Text(_students.error!, textAlign: TextAlign.center, style: TextStyle(color: c.danger, fontSize: 14)),
-      ]));
+    } else if (_students.data == null) {
+      body = Padding(
+        padding: const EdgeInsets.all(Gaps.xl),
+        child: ErrorState(message: _students.error ?? "Couldn't load students.", onRetry: _students.reload),
+      );
     } else if (all.isEmpty) {
       body = centered(Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Ion.peopleOutline, size: 44, color: c.textMuted),
@@ -326,8 +331,17 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
         Text(anyFilter ? 'No students match your filters.' : 'No students found.',
             style: TextStyle(color: c.textSecondary, fontSize: 14)),
       ]));
+      body = RefreshIndicator(
+        color: c.primary,
+        onRefresh: _students.reload,
+        child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [body]),
+      );
     } else {
-      body = ListView.separated(
+      body = RefreshIndicator(
+          color: c.primary,
+          onRefresh: _students.reload,
+          child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, 140),
         itemCount: all.length,
@@ -364,7 +378,7 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
             ]),
           );
         },
-      );
+      ));
     }
 
     return Scaffold(
@@ -380,8 +394,8 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
               label: 'Training Center',
               placeholder: 'All Centers',
               value: _centerId,
-              options: [(id: '', text: 'All Centers'), ..._opts(_centers.data)],
-              loading: _centers.loading,
+              options: [(id: '', text: 'All Centers'), ..._opts(_centerList)],
+              loading: loading,
               onChange: (id, _) => setState(() => _centerId = id),
             ),
             const SizedBox(height: 10),
@@ -394,6 +408,16 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
             ]),
           ]),
         ),
+        if (_failed.isNotEmpty && _students.data != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gaps.xl, 6, Gaps.xl, 0),
+            child: ErrorState(
+              compact: true,
+              message:
+                  "Couldn't load students from ${_failed.length == 1 ? _failed.single : '${_failed.length} centres'}. Pull down to retry.",
+              onRetry: _students.reload,
+            ),
+          ),
         Expanded(child: body),
       ]),
     );
@@ -401,6 +425,12 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
 }
 
 // ── r-training-schedule ────────────────────────────────────────────────────────
+const _dayLabels = ['Other', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/// Every training time across every centre the instructor can see, grouped by day.
+///
+/// `/Listing/TrainingTimeByTcId` answers one centre at a time, so all centres are fetched in
+/// parallel. A centre that fails is reported, never silently dropped.
 class RTrainingScheduleScreen extends StatefulWidget {
   const RTrainingScheduleScreen({super.key});
   @override
@@ -408,41 +438,329 @@ class RTrainingScheduleScreen extends StatefulWidget {
 }
 
 class _RTrainingScheduleScreenState extends State<RTrainingScheduleScreen> with UseApi<RTrainingScheduleScreen> {
-  Object? _centerId;
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
-  late final _schedule = useApi<List<Row_>>(
-      () async => _centerId == null ? const <Row_>[] : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
-      autoRun: false);
+  Object _centreId = '';
+  int _day = -1; // -1 = every day
+  List<String> _failed = const [];
+
+  late final _schedule = useApi<List<ScheduleSlot>>(() async {
+    final centres = await RnApi.dropdownListByType(3);
+    final failed = <String>[];
+    final perCentre = await Future.wait(centres.map((c) async {
+      try {
+        return (centre: c as Map, rows: (await RnApi.trainingTimeByTcId(RnApi.number(c['id']).toInt())).cast<Map>());
+      } catch (_) {
+        failed.add('${c['text'] ?? c['id']}');
+        return (centre: c as Map, rows: const <Map>[]);
+      }
+    }));
+    if (mounted) setState(() => _failed = failed);
+    return buildSchedule(perCentre);
+  });
 
   @override
   void initState() {
     super.initState();
-    _centers;
     _schedule;
   }
 
   @override
-  Widget build(BuildContext context) => ReportScaffold<Row_>(
-        title: 'Training Schedule',
-        filters: [
-          SelectField(
-            label: 'Training Center',
-            placeholder: 'Select a training center',
-            value: _centerId,
-            options: _opts(_centers.data),
-            loading: _centers.loading,
-            onChange: (id, _) {
-              setState(() => _centerId = id);
-              _schedule.reload();
-            },
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final all = _schedule.data ?? const <ScheduleSlot>[];
+    final centreOptions = <RkOption>[
+      (id: '', text: 'All Centers'),
+      for (final entry in {for (final s in all) '${s.centreId}': s.centre}.entries) (id: entry.key, text: entry.value),
+    ];
+    final inCentre = '$_centreId'.isEmpty ? all : all.where((s) => '${s.centreId}' == '$_centreId').toList();
+    final days = {for (final s in inCentre) s.weekday}.toList()..sort((a, b) => (a == 0 ? 8 : a).compareTo(b == 0 ? 8 : b));
+    final shown = _day < 0 ? inCentre : inCentre.where((s) => s.weekday == _day).toList();
+    final centreCount = {for (final s in inCentre) '${s.centreId}'}.length;
+
+    Widget chip(String label, bool active, VoidCallback onTap) => Touchable(
+          activeOpacity: 0.8,
+          onPress: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: active ? c.primary : c.surface,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: active ? c.primary : c.border),
+            ),
+            child: Text(label,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: active ? Colors.white : c.textSecondary)),
           ),
-        ],
-        loading: _schedule.loading && _centerId != null,
-        error: _schedule.error,
-        data: _centerId == null ? null : _schedule.data,
-        emptyText: 'Select a training center to view its schedule.',
-        renderItem: (r, _) => RkCard(child: _title(context, '${r['text'] ?? ''}')),
+        );
+
+    final items = <Widget>[];
+    if (_failed.isNotEmpty) {
+      items.add(Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: ErrorState(
+          compact: true,
+          message: "Couldn't load ${_failed.length == 1 ? _failed.single : '${_failed.length} centres'}. Pull down to retry.",
+          onRetry: _schedule.reload,
+        ),
+      ));
+    }
+    var lastDay = -2;
+    for (final s in shown) {
+      if (s.weekday != lastDay) {
+        lastDay = s.weekday;
+        final count = shown.where((x) => x.weekday == s.weekday).length;
+        items.add(Padding(
+          padding: EdgeInsets.only(top: items.isEmpty ? 0 : 14, bottom: 8),
+          child: Text('${_dayLabels[s.weekday]} · $count class${count == 1 ? '' : 'es'}',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: c.textPrimary)),
+        ));
+      }
+      items.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: RkCard(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CentreRosterPage(centreId: s.centreId, centreName: s.centre, classLabel: s.label))),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: c.primary.hexA('18'), shape: BoxShape.circle),
+              child: Icon(Ion.timeOutline, size: 18, color: c.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _title(context, s.label),
+                const SizedBox(height: 2),
+                Text(s.centre.isEmpty ? '—' : s.centre,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: c.textSecondary)),
+              ]),
+            ),
+            Icon(Ion.peopleOutline, size: 16, color: c.textMuted),
+            const SizedBox(width: 2),
+            Icon(Ion.chevronForward, size: 14, color: c.textMuted),
+          ]),
+        ),
+      ));
+    }
+
+    Widget body;
+    if (_schedule.loading && _schedule.data == null) {
+      body = const RnSpinner(vertical: 60);
+    } else if (_schedule.data == null) {
+      body = Padding(
+        padding: const EdgeInsets.all(Gaps.xl),
+        child: ErrorState(message: _schedule.error ?? "Couldn't load training times.", onRetry: _schedule.reload),
       );
+    } else if (shown.isEmpty && _failed.isEmpty) {
+      body = Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(children: [
+          Icon(Ion.calendarOutline, size: 44, color: c.textMuted),
+          const SizedBox(height: 10),
+          Text(all.isEmpty ? 'No training times at your centres.' : 'No classes match these filters.',
+              textAlign: TextAlign.center, style: TextStyle(color: c.textSecondary, fontSize: 14)),
+        ]),
+      );
+    } else {
+      body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: items);
+    }
+
+    return Scaffold(
+      backgroundColor: c.background,
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ScreenHeader(
+          title: 'Training Schedule',
+          subtitle: _schedule.data == null
+              ? null
+              : '${inCentre.length} class${inCentre.length == 1 ? '' : 'es'} · $centreCount centre${centreCount == 1 ? '' : 's'}',
+        ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(Gaps.xl, 4, Gaps.xl, 6),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.xl)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SelectField(
+              label: 'Training Center',
+              placeholder: 'All Centers',
+              value: _centreId,
+              options: centreOptions,
+              loading: _schedule.loading && _schedule.data == null,
+              onChange: (id, _) => setState(() {
+                _centreId = id;
+                _day = -1;
+              }),
+            ),
+            if (days.length > 1) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 32,
+                child: ListView(scrollDirection: Axis.horizontal, children: [
+                  chip('All days', _day < 0, () => setState(() => _day = -1)),
+                  for (final d in days) ...[
+                    const SizedBox(width: 6),
+                    chip(d == 0 ? 'Other' : _dayLabels[d].substring(0, 3), _day == d, () => setState(() => _day = d)),
+                  ],
+                ]),
+              ),
+            ],
+          ]),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: c.primary,
+            onRefresh: _schedule.reload,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.md, Gaps.xl, 120),
+              children: [body],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Students registered at one centre. The club system has no list per training time, so a
+/// class opens its centre's roster and says so.
+class CentreRosterPage extends StatefulWidget {
+  final Object centreId;
+  final String centreName;
+  final String? classLabel;
+  const CentreRosterPage({super.key, required this.centreId, required this.centreName, this.classLabel});
+  @override
+  State<CentreRosterPage> createState() => _CentreRosterPageState();
+}
+
+class _CentreRosterPageState extends State<CentreRosterPage> with UseApi<CentreRosterPage> {
+  final _search = TextEditingController();
+  late final _roster = useApi(() => RnApi.studentListByTcId(RnApi.number(widget.centreId).toInt()));
+
+  @override
+  void initState() {
+    super.initState();
+    _roster;
+    _search.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final q = _search.text.trim().toLowerCase();
+    final all = _roster.data ?? const <Row_>[];
+    final shown = q.isEmpty
+        ? all
+        : all
+            .where((s) => '${s['text'] ?? ''}'.toLowerCase().contains(q) || '${s['value'] ?? ''}'.toLowerCase().contains(q))
+            .toList();
+    return Scaffold(
+      backgroundColor: c.background,
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ScreenHeader(
+          title: widget.centreName.isEmpty ? 'Class List' : widget.centreName,
+          subtitle: _roster.data == null ? null : '${all.length} student${all.length == 1 ? '' : 's'} at this centre',
+        ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(Gaps.xl, 4, Gaps.xl, 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.lg)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (widget.classLabel != null) ...[
+              Text(widget.classLabel!, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary)),
+              const SizedBox(height: 4),
+            ],
+            Text('Everyone registered at this centre. The club system does not list students per training time yet.',
+                style: TextStyle(fontSize: 11.5, color: c.textSecondary, height: 16 / 11.5)),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                  color: c.surface, borderRadius: BorderRadius.circular(999), border: Border.all(color: c.border)),
+              child: Row(children: [
+                Icon(Ion.searchOutline, size: 15, color: c.textMuted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextField(
+                    controller: _search,
+                    autocorrect: false,
+                    style: TextStyle(fontSize: 14, color: c.textPrimary),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                      hintText: 'Search name or reg no',
+                      hintStyle: TextStyle(color: c.textMuted),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: c.primary,
+            onRefresh: _roster.reload,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.md, Gaps.xl, 120),
+              children: [
+                if (_roster.loading && _roster.data == null)
+                  const RnSpinner(vertical: 60)
+                else if (_roster.data == null)
+                  ErrorState(message: _roster.error ?? "Couldn't load the class list.", onRetry: _roster.reload)
+                else if (shown.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Text(all.isEmpty ? 'No students at this centre.' : 'No students match your search.',
+                        textAlign: TextAlign.center, style: TextStyle(color: c.textSecondary, fontSize: 14)),
+                  )
+                else
+                  for (final s in shown)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: RkCard(
+                        child: Row(children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: _tintFor(s['id']).hexA('22')),
+                            child: Text(initialsOf('${s['text'] ?? ''}'),
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _tintFor(s['id']))),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              _title(context, '${s['text'] ?? ''}', lines: 1),
+                              if ('${s['value'] ?? ''}'.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text('${s['value']}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 12, color: c.textSecondary)),
+                              ],
+                            ]),
+                          ),
+                        ]),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 }
 
 // ── r-grading (Grading Schedule / Grade Completed) ─────────────────────────────
@@ -946,11 +1264,11 @@ class _RPaymentSlipsScreenState extends State<RPaymentSlipsScreen> with UseApi<R
       );
 }
 
-// ── r-tournament-past / r-tournament-upcoming ──────────────────────────────────
-/// Both call the same date-less medal summary; only the title differs (as in RN).
+// ── r-tournament-summary ───────────────────────────────────────────────────────
+/// `/Reports/TournamentSummary` is a date-less medal summary. Expo showed it twice, as
+/// "Tournaments (Past)" and "Upcoming Tournaments", with identical rows; this is one report.
 class RTournamentScreen extends StatefulWidget {
-  final String title;
-  const RTournamentScreen({super.key, required this.title});
+  const RTournamentScreen({super.key});
   @override
   State<RTournamentScreen> createState() => _RTournamentScreenState();
 }
@@ -979,15 +1297,18 @@ class _RTournamentScreenState extends State<RTournamentScreen> with UseApi<RTour
     ];
     final rows = _name.isEmpty ? all : all.where((r) => '${r['name'] ?? ''}'.trim() == _name).toList();
     return ReportScaffold<Row_>(
-      title: widget.title,
+      title: 'Tournament Summary',
       loading: _data.loading,
       error: _data.error,
       data: rows,
       onRefresh: _data.reload,
-      emptyText: 'No tournament data.',
-      filters: [
-        SelectField(label: 'Tournament Name', placeholder: 'All', value: _name, options: nameOptions, onChange: (id, _) => setState(() => _name = '$id')),
-      ],
+      emptyText: 'No tournament results were returned for your account.',
+      // Rows grouped only by gender carry no name; a filter holding just "All" is noise.
+      filters: nameOptions.length > 2
+          ? [
+              SelectField(label: 'Tournament Name', placeholder: 'All', value: _name, options: nameOptions, onChange: (id, _) => setState(() => _name = '$id')),
+            ]
+          : null,
       renderItem: (r, _) {
         String t(dynamic v) => '${v ?? ''}'.trim();
         final title = t(r['name']).isNotEmpty ? t(r['name']) : t(r['category']).isNotEmpty ? t(r['category']) : t(r['gender']).isNotEmpty ? t(r['gender']) : 'Tournament';
@@ -995,7 +1316,7 @@ class _RTournamentScreenState extends State<RTournamentScreen> with UseApi<RTour
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _title(context, title, bottom: 2),
             if (t(r['ageGroup']).isNotEmpty) KV('Age Group', r['ageGroup']),
-            if (t(r['gender']).isNotEmpty) KV('Gender', r['gender']),
+            if (t(r['gender']).isNotEmpty && t(r['gender']) != title) KV('Gender', r['gender']),
             KV('Players', RnApi.number(r['playerCount']).toInt()),
             Padding(
               padding: const EdgeInsets.only(top: 8),

@@ -1,4 +1,5 @@
-// Live probe: can an INSTRUCTOR token record attendance for a student?
+// Live probe: can an INSTRUCTOR token record attendance for a student, and is there a
+// roster per training time?
 //
 // Lives in tool/, not test/, so `flutter test` never runs it. Nothing is committed with
 // credentials; they come from --dart-define at run time.
@@ -84,6 +85,25 @@ void main() {
     final times = await RnApi.trainingTimeByTcId(_tc);
     _say('class times: ${times.length}');
     final tTimeId = times.isEmpty ? null : RnApi.number(times.first['id']).toInt();
+
+    // Read-only: is there a roster per training time? /Reports/StudentDetails accepts
+    // tCenterId and tTimeId; check whether an instructor token gets rows and whether the
+    // filters change them. Counts and field names only.
+    Future<List<Map<String, dynamic>>> details(Map<String, dynamic> body) async {
+      try {
+        return await RnApi.studentDetails(body);
+      } catch (e) {
+        _say('  StudentDetails $body failed: $e');
+        return const [];
+      }
+    }
+
+    final unfiltered = await details({});
+    final byCentre = await details({'tCenterId': _tc});
+    final byTime = tTimeId == null ? const <Map<String, dynamic>>[] : await details({'tCenterId': _tc, 'tTimeId': tTimeId});
+    _say('StudentDetails rows: no filter ${unfiltered.length}, centre ${byCentre.length}, centre+time ${byTime.length}');
+    final sample = [...byTime, ...byCentre, ...unfiltered].firstOrNull;
+    if (sample != null) _say('StudentDetails fields: ${sample.keys.toList()..sort()}');
 
     if (!_write) {
       _say('read-only run finished. Re-run with PROBE_WRITE=true to try the write combinations.');

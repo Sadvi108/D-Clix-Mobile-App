@@ -47,7 +47,7 @@ class MoreScreen extends StatelessWidget {
       title: 'Club',
       items: [
         (id: 'events', label: 'Events', icon: Ion.calendar, color: Color(0xFFF97316), route: '/events'),
-        (id: 'competition', label: 'Competition', icon: Ion.medal, color: Color(0xFFDB2777), route: '/competition'),
+        (id: 'tournament', label: 'Tournament', icon: Ion.trophy, color: Color(0xFFDB2777), route: '/tournament'),
         (id: 'offers', label: 'Offers', icon: Ion.pricetags, color: Color(0xFF10B981), route: '/events?tab=offers'),
         (id: 'chat', label: 'Chat Academy', icon: Ion.chatbubbles, color: Color(0xFF22C55E), route: '/chat'),
         (id: 'helpdesk', label: 'Help Desk', icon: Ion.headset, color: Color(0xFF0EA5E9), route: '/helpdesk'),

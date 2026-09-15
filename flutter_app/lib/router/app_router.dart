@@ -17,7 +17,7 @@ import '../screens/chat_thread_screen.dart';
 import '../screens/more_screen.dart';
 import '../screens/autopay_screen.dart';
 import '../screens/belt_rank_screen.dart';
-import '../screens/competition_screen.dart';
+import '../screens/tournament_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/helpdesk_screen.dart';
 import '../screens/notifications_screen.dart';
@@ -188,13 +188,15 @@ final GoRouter appRouter = GoRouter(
     GoRoute(path: '/instructor/reports/receipt', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RReceiptsScreen())),
     GoRoute(path: '/instructor/reports/purchase-request', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RPurchaseRequestsScreen())),
     GoRoute(path: '/instructor/reports/payment-slip', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RPaymentSlipsScreen())),
-    GoRoute(path: '/instructor/reports/tournament-past', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RTournamentScreen(title: 'Tournament (Past)'))),
-    GoRoute(path: '/instructor/reports/tournament-upcoming', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RTournamentScreen(title: 'Upcoming Tournament'))),
+    GoRoute(path: '/instructor/reports/tournament-summary', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RTournamentScreen())),
+    // Old Past / Upcoming entries showed the same date-less summary; keep their links working.
+    GoRoute(path: '/instructor/reports/tournament-past', redirect: (_, __) => '/instructor/reports/tournament-summary'),
+    GoRoute(path: '/instructor/reports/tournament-upcoming', redirect: (_, __) => '/instructor/reports/tournament-summary'),
+    GoRoute(path: '/instructor/reports/tournament', redirect: (_, __) => '/instructor/reports/tournament-summary'),
     GoRoute(path: '/instructor/reports/contribution', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RContributionScreen())),
     GoRoute(path: '/instructor/reports/reimbursement', pageBuilder: (_, s) => _fadeThrough(s.pageKey, const RReimbursementScreen())),
     // Reports this app has that Expo listed as "coming soon" — generic list screens.
     _reportRoute('/instructor/reports/activity', 'Activities', Api.reportsActivity),
-    _reportRoute('/instructor/reports/tournament', 'Tournament Schedule', Api.reportsTournamentSummary),
     _reportRoute('/instructor/reports/missing-invoice', 'Missing Invoice', Api.outstandingFetch),
     _reportRoute('/instructor/reports/fee-master', 'Invoice Types', Api.listingInvoceTypes),
     GoRoute(
@@ -288,9 +290,11 @@ final GoRouter appRouter = GoRouter(
         pageBuilder: (_, s) =>
             _fadeThrough(s.pageKey, const BeltRankScreen())),
     GoRoute(
-        path: '/competition',
+        path: '/tournament',
         pageBuilder: (_, s) =>
-            _fadeThrough(s.pageKey, const CompetitionScreen())),
+            _fadeThrough(s.pageKey, const TournamentScreen())),
+    // Renamed from Competition; older links and guide entries still land here.
+    GoRoute(path: '/competition', redirect: (_, __) => '/tournament'),
     GoRoute(
         path: '/notifications',
         pageBuilder: (_, s) =>

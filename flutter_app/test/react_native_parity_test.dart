@@ -12,6 +12,7 @@ import 'package:dclix_app/screens/home_screen.dart';
 import 'package:dclix_app/screens/instructor_collections_screen.dart';
 import 'package:dclix_app/screens/payment/bcpg_webview_screen.dart';
 import 'package:dclix_app/screens/instructor_attendance_screen.dart';
+import 'package:dclix_app/screens/instructor_reports/rn_reports.dart';
 import 'package:dclix_app/screens/login_screen.dart';
 import 'package:dclix_app/screens/new_student_screen.dart';
 import 'package:dclix_app/screens/payments_screen.dart';
@@ -222,6 +223,53 @@ void main() {
     await settle(tester);
     expect(find.text('Try again'), findsOneWidget);
     expect(find.text('Rest Day'), findsNothing);
+  });
+
+  testWidgets(
+      'training schedule lists every centre\'s classes without picking a centre',
+      (tester) async {
+    ApiService.client = MockClient((request) async {
+      final path = request.url.path;
+      if (path.contains('DropdownListByType')) {
+        return ok([
+          {'id': 1, 'text': 'Centre A'},
+          {'id': 2, 'text': 'Centre B'},
+          {'id': 3, 'text': 'Centre C'}
+        ]);
+      }
+      if (path == '/Listing/TrainingTimeByTcId/1') {
+        return ok([
+          {'id': 10, 'text': '20:00 To 21:00 (Monday)'}
+        ]);
+      }
+      if (path == '/Listing/TrainingTimeByTcId/2') {
+        return ok([
+          {'id': 20, 'text': '18:00 To 19:00 (Monday)'},
+          {'id': 21, 'text': '09:00 To 10:00 (Saturday)'}
+        ]);
+      }
+      return http.Response('down', 500);
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(wrap(const RTrainingScheduleScreen()));
+    await settle(tester);
+    expect(find.text('20:00 To 21:00 (Monday)'), findsOneWidget);
+    expect(find.text('18:00 To 19:00 (Monday)'), findsOneWidget);
+    expect(find.text('09:00 To 10:00 (Saturday)'), findsOneWidget);
+    expect(find.text('Monday · 2 classes'), findsOneWidget);
+    expect(find.textContaining("Couldn't load Centre C"), findsOneWidget);
+  });
+
+  testWidgets(
+      'student list shows retry when centres fail instead of spinning forever',
+      (tester) async {
+    ApiService.client = MockClient((_) async => http.Response('down', 503));
+    await tester.pumpWidget(wrap(const RStudentListScreen()));
+    await settle(tester);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
   });
 
   testWidgets(

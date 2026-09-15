@@ -75,7 +75,7 @@ const _noDataNeeded = {
 /// refactor, leaves a screen that renders perfectly and shows nothing.
 const _expected = <String, List<String>>{
   'attendance_screen': ['attendanceReport'],
-  'competition_screen': ['reportsTournamentSummary'],
+  'tournament_screen': ['reportsTournamentSummary'],
   'student_details_screen': ['myInfo', 'studentAddtnlInfo'],
   'edit_profile_screen': ['profileUpdateProfile'],
   'helpdesk_screen': ['profileSend2ClubHelpDesk'],

@@ -42,6 +42,21 @@ void main() {
     expect(registered.length, greaterThan(15));
   });
 
+  test('Competition is renamed Tournament, with old links redirected', () {
+    expect(registered, contains('/tournament'));
+    expect(MoreScreen.catalogueRoutes, isNot(contains('/competition')));
+    expect(kStudentQuickCards.map((q) => q.route), isNot(contains('/competition')));
+    for (final (from, to) in const [
+      ('/competition', '/tournament'),
+      ('/instructor/reports/tournament-past', '/instructor/reports/tournament-summary'),
+      ('/instructor/reports/tournament-upcoming', '/instructor/reports/tournament-summary'),
+    ]) {
+      final route = appRouter.configuration.routes.whereType<GoRoute>().firstWhere((r) => r.path == from);
+      expect(route.redirect, isNotNull, reason: '$from must redirect');
+      expect(route.redirect!(_FakeContext(), _FakeState()), to);
+    }
+  });
+
   test('every More-catalogue tile points at a registered route', () {
     final dead = MoreScreen.catalogueRoutes
         .where((r) => !registered.contains(Uri.parse(r).path))
@@ -121,3 +136,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+class _FakeContext extends Fake implements BuildContext {}
+
+class _FakeState extends Fake implements GoRouterState {}
