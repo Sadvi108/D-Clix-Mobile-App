@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 
 import '../services/api.dart';
 import '../services/api_service.dart';
+import '../services/manual_attendance.dart';
 import '../services/response_utils.dart';
 import '../services/rn_api.dart';
 import '../services/user_session.dart';
@@ -22,9 +23,10 @@ import '../widgets/use_api.dart';
 
 /// Port of `frontend/app/update-attendance.tsx` (Expo v2.11.1) — Class Check-In.
 ///
-/// There is deliberately no "mark present" button and no register: `/Attendance/Add` only
-/// ever checks in the token holder, and `/Reports/Attendance` returns nothing to an
-/// instructor. What is left is proven useful: the class list and the QR students scan.
+/// Students check in by scanning the centre QR: `/Attendance/Add` only records the token
+/// holder. The tick-and-save register appears only when the server's route table has
+/// [ManualAttendance.route] (proposed in docs/specs/2026-09-15-manual-attendance.md), so it
+/// goes live with the backend and never offers a Save that cannot work.
 class InstructorAttendanceScreen extends StatefulWidget {
   const InstructorAttendanceScreen({super.key});
   @override
@@ -36,14 +38,23 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
   Object? _centerId;
   Object? _timeId;
   bool _poster = false;
+  final Set<int> _picked = {};
+  Map<int, MarkResult> _results = const {};
+  bool _saving = false;
+
+  late final _manual = useApi<bool>(ManualAttendance.isAvailable);
 
   late final _centers = useApi(() => RnApi.dropdownListByType(3));
   late final _times = useApi<List<Map<String, dynamic>>>(
-      () async => _centerId == null ? const <Map<String, dynamic>>[] : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
+      () async => _centerId == null
+          ? const <Map<String, dynamic>>[]
+          : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
       autoRun: false);
   // The roster is CENTRE-scoped — there is no roster-by-training-time endpoint.
   late final _roster = useApi<List<Map<String, dynamic>>>(
-      () async => _centerId == null ? const <Map<String, dynamic>>[] : await RnApi.studentListByTcId(RnApi.number(_centerId).toInt()),
+      () async => _centerId == null
+          ? const <Map<String, dynamic>>[]
+          : await RnApi.studentListByTcId(RnApi.number(_centerId).toInt()),
       autoRun: false);
 
   @override
@@ -52,6 +63,49 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
     _centers;
     _times;
     _roster;
+    _manual;
+  }
+
+  int? _studentId(Map<String, dynamic> row) => int.tryParse('${row['id'] ?? ''}');
+
+  Future<void> _save(String centerName, String timeName) async {
+    final ids = _picked.toList();
+    if (ids.isEmpty || _centerId == null || _timeId == null || _saving) return;
+    final ok = await confirmDialog(
+      context,
+      'Mark ${ids.length} present?',
+      message: '$centerName · $timeName\nToday, ${fmtDateGB(DateTime.now().toIso8601String())}',
+      confirmLabel: 'Mark present',
+    );
+    if (!ok || !mounted) return;
+    final centreAtSave = _centerId;
+    setState(() => _saving = true);
+    try {
+      final results = await ManualAttendance.markPresent(
+        tCenterId: RnApi.number(_centerId).toInt(),
+        tTimeId: RnApi.number(_timeId).toInt(),
+        date: DateTime.now(),
+        studentIds: ids,
+      );
+      if (!mounted) return;
+      final marked = results.values.where((r) => r.ok).length;
+      // The centre picker stays usable during a save; never paint results on another roster.
+      if (_centerId == centreAtSave) {
+        setState(() {
+          _results = {..._results, ...results};
+          _picked.removeWhere((id) => results[id]?.ok ?? false);
+        });
+      }
+      await notify(
+        context,
+        marked == ids.length ? 'Attendance saved' : 'Some students were not marked',
+        '$marked of ${ids.length} marked present.${marked == ids.length ? '' : ' Check the list for details.'}',
+      );
+    } catch (e) {
+      if (mounted) await notify(context, "Couldn't save attendance", friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   String get _centerCode => QrContent.trainingCenter(RnApi.number(_centerId).toInt());
@@ -104,12 +158,21 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
     final c = context.appColors;
     final bottom = MediaQuery.paddingOf(context).bottom;
     final roster = _roster.data ?? const <Map<String, dynamic>>[];
-    final centerOptions = <RkOption>[for (final o in _centers.data ?? const <Map<String, dynamic>>[]) (id: (o['id'] ?? '') as Object, text: '${o['text'] ?? ''}')];
-    final timeOptions = <RkOption>[for (final o in _times.data ?? const <Map<String, dynamic>>[]) (id: (o['id'] ?? '') as Object, text: '${o['text'] ?? ''}')];
+    final centerOptions = <RkOption>[
+      for (final o in _centers.data ?? const <Map<String, dynamic>>[])
+        (id: (o['id'] ?? '') as Object, text: '${o['text'] ?? ''}')
+    ];
+    final timeOptions = <RkOption>[
+      for (final o in _times.data ?? const <Map<String, dynamic>>[])
+        (id: (o['id'] ?? '') as Object, text: '${o['text'] ?? ''}')
+    ];
     final centerName = centerOptions.where((o) => '${o.id}' == '$_centerId').firstOrNull?.text ?? '';
     final timeName = timeOptions.where((o) => '${o.id}' == '$_timeId').firstOrNull?.text ?? '';
     final firstError = _centers.error ?? _times.error ?? _roster.error;
     final hasCenter = _centerId != null;
+    final canMark = _manual.data == true;
+    final rosterIds = [for (final r in roster) _studentId(r)].whereType<int>().toSet();
+    final allPicked = rosterIds.isNotEmpty && rosterIds.every(_picked.contains);
 
     return Scaffold(
       backgroundColor: c.background,
@@ -144,6 +207,8 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                           // A failed fetch keeps old data; never show another centre's roster.
                           _times.data = null;
                           _roster.data = null;
+                          _picked.clear();
+                          _results = const {};
                         });
                         _times.reload();
                         _roster.reload();
@@ -157,7 +222,10 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                       options: timeOptions,
                       loading: _times.loading,
                       disabled: !hasCenter,
-                      onChange: (id, _) => setState(() => _timeId = id),
+                      onChange: (id, _) => setState(() {
+                        _timeId = id;
+                        _results = const {};
+                      }),
                     ),
                   ]),
                 ),
@@ -188,7 +256,8 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                       child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                         Icon(Ion.qrCode, size: 20, color: Colors.white),
                         SizedBox(width: 10),
-                        Text('Show Centre QR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text('Show Centre QR',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                       ]),
                     ),
                   ),
@@ -202,7 +271,9 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                          "Students check in by scanning this QR with their own D-CLIX app, and it appears in their attendance straight away. Instructor accounts can't record or view check-ins on the current API — marking the register from here needs a backend update.",
+                          canMark
+                              ? 'Tick students who are present, choose the training time, then save. Students can still check in by scanning this QR.'
+                              : "Students check in by scanning this QR with their own D-CLIX app. Marking students present from here needs a backend update and switches on automatically once it's live.",
                           style: TextStyle(fontSize: 11.5, color: c.textSecondary, height: 17 / 11.5)),
                     ),
                   ]),
@@ -211,10 +282,22 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                   padding: const EdgeInsets.fromLTRB(Gaps.xl, 24, Gaps.xl, 4),
                   child: Row(children: [
                     Expanded(
-                      child: Text('Class List', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.textPrimary)),
+                      child: Text('Class List',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c.textPrimary)),
                     ),
+                    if (canMark && rosterIds.isNotEmpty && !_roster.loading)
+                      Touchable(
+                        onPress: () =>
+                            setState(() => allPicked ? _picked.removeAll(rosterIds) : _picked.addAll(rosterIds)),
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Text(allPicked ? 'Clear all' : 'Select all',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.primary)),
+                        ),
+                      ),
                     if (_roster.loading && hasCenter)
-                      SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))
+                      SizedBox(
+                          width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))
                     else if (hasCenter)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -236,7 +319,9 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                     child: _roster.loading && hasCenter
                         ? Center(
                             child: SizedBox(
-                                width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3, color: c.primary)))
+                                width: 32,
+                                height: 32,
+                                child: CircularProgressIndicator(strokeWidth: 3, color: c.primary)))
                         : Column(children: [
                             Icon(Ion.peopleOutline, size: 44, color: c.textMuted),
                             const SizedBox(height: 10),
@@ -248,48 +333,104 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
                                 style: TextStyle(color: c.textSecondary, fontSize: 14)),
                           ]),
                   ),
-                for (final (i, item) in roster.indexed)
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: rnCard(c),
-                    child: Row(children: [
-                      SizedBox(
-                        width: 20,
-                        child: Text('${i + 1}',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.textMuted)),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-                        child: Icon(Ion.person, size: 18, color: c.primary),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('${item['text'] ?? ''}'.isEmpty ? '—' : '${item['text']}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                          if ('${item['value'] ?? ''}'.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text('${item['value']}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: c.textSecondary)),
-                          ],
-                        ]),
-                      ),
-                    ]),
-                  ),
+                for (final (i, item) in roster.indexed) _rosterRow(c, i, item, canMark),
               ],
             ),
           ),
         ),
+        if (canMark && _picked.isNotEmpty)
+          Container(
+            padding: EdgeInsets.fromLTRB(Gaps.xl, 12, Gaps.xl, 12 + bottom),
+            decoration: BoxDecoration(color: c.surface, border: Border(top: BorderSide(color: c.borderLight))),
+            child: Touchable(
+              activeOpacity: 0.9,
+              onPress: _timeId == null || _saving ? null : () => _save(centerName, timeName),
+              child: Opacity(
+                opacity: _timeId == null ? 0.5 : 1,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: c.gradient), borderRadius: BorderRadius.circular(999)),
+                  child: Center(
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(_timeId == null ? 'Select a training time first' : 'Mark ${_picked.length} present',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ]),
+    );
+  }
+
+  Widget _rosterRow(AppColors c, int i, Map<String, dynamic> item, bool canMark) {
+    final id = _studentId(item);
+    final picked = id != null && _picked.contains(id);
+    final result = id == null ? null : _results[id];
+    final row = Container(
+      margin: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: picked ? rnCard(c).copyWith(border: Border.all(color: c.primary, width: 1.5)) : rnCard(c),
+      child: Row(children: [
+        SizedBox(
+          width: 20,
+          child: Text('${i + 1}',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.textMuted)),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
+          child: Icon(Ion.person, size: 18, color: c.primary),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${item['text'] ?? ''}'.isEmpty ? '—' : '${item['text']}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.textPrimary)),
+            if ('${item['value'] ?? ''}'.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text('${item['value']}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: c.textSecondary)),
+            ],
+            if (result != null) ...[
+              const SizedBox(height: 3),
+              Text(result.message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: result.ok ? c.success : c.danger)),
+            ],
+          ]),
+        ),
+        if (canMark && id != null) ...[
+          const SizedBox(width: 10),
+          Icon(
+            result?.ok == true && !picked
+                ? Ion.checkmarkDoneCircle
+                : picked
+                    ? Ion.checkmarkCircle
+                    : Ion.ellipseOutline,
+            size: 26,
+            color: picked || result?.ok == true ? c.primary : c.textMuted,
+            semanticLabel: picked ? 'Selected' : 'Not selected',
+          ),
+        ],
+      ]),
+    );
+    if (!canMark || id == null) return row;
+    return Touchable(
+      activeOpacity: 0.8,
+      onPress: _saving ? null : () => setState(() => picked ? _picked.remove(id) : _picked.add(id)),
+      child: row,
     );
   }
 }
@@ -380,7 +521,9 @@ class _CentreQrPageState extends State<_CentreQrPage> {
                   child: _busy
                       ? Center(
                           child: SizedBox(
-                              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: c.primary)))
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: c.primary)))
                       : Row(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Ion.printOutline, size: 16, color: c.primary),
                           const SizedBox(width: 8),

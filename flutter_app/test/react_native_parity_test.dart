@@ -20,6 +20,7 @@ import 'package:dclix_app/screens/schedule_screen.dart';
 import 'package:dclix_app/screens/tabs_shell.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/boost_payment.dart';
+import 'package:dclix_app/services/manual_attendance.dart';
 import 'package:dclix_app/services/user_session.dart';
 import 'package:dclix_app/theme/app_theme.dart';
 import 'package:dclix_app/theme/theme_provider.dart';
@@ -221,6 +222,122 @@ void main() {
     await settle(tester);
     expect(find.text('Try again'), findsOneWidget);
     expect(find.text('Rest Day'), findsNothing);
+  });
+
+  testWidgets(
+      'instructor register stays hidden until the marking route is deployed',
+      (tester) async {
+    ManualAttendance.resetCache();
+    ApiService.client = MockClient((request) async {
+      if (request.url.path == '/swagger/v1/swagger.json') {
+        return http.Response(
+            jsonEncode({
+              'paths': {'/Attendance/Add': {}}
+            }),
+            200);
+      }
+      if (request.url.path.contains('DropdownListByType')) {
+        return ok([
+          {'id': 1, 'text': 'Centre A'}
+        ]);
+      }
+      if (request.url.path == '/Listing/StudentListByTcId/1') {
+        return ok([
+          {'id': 10, 'text': 'Alice', 'value': 'A10'}
+        ]);
+      }
+      return ok([]);
+    });
+    await tester.pumpWidget(wrap(const InstructorAttendanceScreen()));
+    await settle(tester);
+    await tester.tap(find.text('Select centre'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Centre A').last);
+    await settle(tester);
+    expect(find.text('Alice'), findsOneWidget);
+    await tester.tap(find.text('Alice'));
+    await settle(tester);
+    expect(find.text('Select all'), findsNothing);
+    expect(find.text('Select a training time first'), findsNothing);
+    expect(find.textContaining(RegExp(r'^Mark \d+ present$')), findsNothing);
+    expect(find.textContaining('needs a backend update'), findsOneWidget);
+  });
+
+  testWidgets('instructor ticks students, picks a time and saves the register',
+      (tester) async {
+    ManualAttendance.resetCache();
+    Map<String, dynamic>? posted;
+    ApiService.client = MockClient((request) async {
+      final path = request.url.path;
+      if (path == '/swagger/v1/swagger.json') {
+        return http.Response(
+            jsonEncode({
+              'paths': {ManualAttendance.route: {}}
+            }),
+            200);
+      }
+      if (path.contains('DropdownListByType')) {
+        return ok([
+          {'id': 1, 'text': 'Centre A'}
+        ]);
+      }
+      if (path == '/Listing/TrainingTimeByTcId/1') {
+        return ok([
+          {'id': 77, 'text': '8 PM'}
+        ]);
+      }
+      if (path == '/Listing/StudentListByTcId/1') {
+        return ok([
+          {'id': 10, 'text': 'Alice', 'value': 'A10'},
+          {'id': 11, 'text': 'Ben', 'value': 'B11'}
+        ]);
+      }
+      if (path == ManualAttendance.route) {
+        posted = jsonDecode(request.body) as Map<String, dynamic>;
+        return ok([
+          {'studentId': 10, 'status': 0, 'message': 'Marked present'}
+        ]);
+      }
+      return ok([]);
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(wrap(const InstructorAttendanceScreen()));
+    await settle(tester);
+    await tester.tap(find.text('Select centre'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Centre A').last);
+    await settle(tester);
+
+    await tester.tap(find.text('Alice'));
+    await settle(tester);
+    expect(find.text('Select a training time first'), findsOneWidget);
+    await tester.tap(find.text('Select a training time first'));
+    await settle(tester);
+    expect(posted, isNull, reason: 'no class time, no save');
+
+    await tester.tap(find.text('Select time'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('8 PM').last);
+    await settle(tester);
+    await tester.tap(find.text('Mark 1 present'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark present'));
+    await tester.pumpAndSettle();
+    await settle(tester);
+
+    expect(posted!['tCenterId'], 1);
+    expect(posted!['tTimeId'], 77);
+    expect(posted!['entries'], [
+      {'studentId': 10, 'attendanceTypeId': ManualAttendance.presentTypeId}
+    ]);
+    expect(find.text('Attendance saved'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text('Marked present'), findsOneWidget);
+    expect(find.textContaining('Mark 1 present'), findsNothing,
+        reason: 'saved students are unticked');
   });
 
   testWidgets('instructor centre switch clears the old roster on failure',

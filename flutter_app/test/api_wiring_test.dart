@@ -162,11 +162,15 @@ void main() {
       '/Account/ApproveStudent',
       '/Account/RejectStudent'
     };
+    // Manual attendance reads the route table itself and only calls its proposed route once
+    // the server lists it (docs/specs/2026-09-15-manual-attendance.md).
+    const manualAttendance = {'/swagger/v1/swagger.json', '/Attendance/MarkByInstructor'};
     final missing = calls
         .where((c) =>
             resolve(c.path, routes.keys) == null &&
             !(c.file == 'online_submissions.dart' &&
-                proposed.contains(normalise(c.path))))
+                proposed.contains(normalise(c.path))) &&
+            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))))
         .toList();
     expect(missing, isEmpty,
         reason:
