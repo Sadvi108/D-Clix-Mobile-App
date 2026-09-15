@@ -49,8 +49,8 @@ git tag -a flutter-v2.14.0 -m "D-CLIX Flutter 2.14.0" && git push origin flutter
 The **Build Flutter APK** workflow builds `app-release.apk` (direct install) and
 `app-release.aab` (Google Play upload), checks the signature and publishes both with
 SHA-256 files as a GitHub Release. A tag with a suffix (`flutter-v2.14.0-beta.1`)
-publishes as a pre-release. A tag built without the secrets fails instead of
-publishing a debug-signed build.
+publishes as a pre-release. A tag built without the secrets still publishes, but only as a
+pre-release named "(test build)" with a debug-signed APK, never as a full release.
 
 Pushes to `main` and pull requests still build; without the secrets they produce a
 debug-signed APK for testing.

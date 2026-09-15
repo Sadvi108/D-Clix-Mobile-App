@@ -13,6 +13,8 @@ permissions:
 jobs:
   build-flutter-apk:
     runs-on: ubuntu-latest
+    outputs:
+      debug_signed: ${{ steps.signing.outputs.debug_signed }}
     defaults:
       run:
         working-directory: flutter_app
@@ -62,17 +64,18 @@ jobs:
           flutter build apk --release
           flutter build appbundle --release
       - name: Check signing key
-        # Release tags must never publish a debug-signed build: it cannot be uploaded to
-        # Play and cannot update an installation signed with the upload key.
+        # A debug-signed build cannot be uploaded to Play or update an installation signed
+        # with the upload key. Tags still publish it, but only as a pre-release test build,
+        # never as the latest full release.
+        id: signing
         run: |
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
           "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | tee /tmp/apk-cert.txt
           if grep -q 'CN=Android Debug' /tmp/apk-cert.txt; then
-            if [[ "$GITHUB_REF" == refs/tags/flutter-v* ]]; then
-              echo "::error::Release tag built with the debug key. Add the Android signing secrets (docs/android-signing.md)."
-              exit 1
-            fi
-            echo "::warning::APK is debug-signed."
+            echo "::warning::APK is debug-signed. Add the Android signing secrets for a full release (docs/android-signing.md)."
+            echo "debug_signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "debug_signed=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Verify packaged resources and calculate checksum
         run: |
@@ -109,19 +112,28 @@ jobs:
         with:
           name: dclix-flutter-apk
           path: release-apk
-      - name: Detect pre-release tag
-        # Suffixed versions such as flutter-v2.14.0-beta.1 publish as pre-releases.
+      - name: Detect release channel
+        # Suffixed versions (flutter-v2.14.0-beta.1) and debug-signed builds publish as
+        # pre-releases.
         id: channel
+        env:
+          DEBUG_SIGNED: ${{ needs.build-flutter-apk.outputs.debug_signed }}
         run: |
-          case "${GITHUB_REF_NAME#flutter-v}" in
-            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
-            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-      - name: Publish signed APK and app bundle
+          version="${GITHUB_REF_NAME#flutter-v}"
+          prerelease=false
+          name="D-Clix v$version"
+          case "$version" in *-*) prerelease=true ;; esac
+          if [ "$DEBUG_SIGNED" = "true" ]; then
+            prerelease=true
+            name="$name (test build)"
+          fi
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Publish APK and app bundle
         uses: softprops/action-gh-release@v2
         with:
           files: release-apk/*
           tag_name: ${{ github.ref_name }}
-          name: D-CLIX Flutter ${{ github.ref_name }}
+          name: ${{ steps.channel.outputs.name }}
           body_path: docs/releases/${{ github.ref_name }}.md
           prerelease: ${{ steps.channel.outputs.prerelease }}
