@@ -315,8 +315,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
           ]),
         );
 
-    final dueFg = c.isDark ? const Color(0xFFFDBA74) : const Color(0xFF9A3412);
-
     return ColoredBox(
       color: c.background,
       child: Column(children: [
@@ -391,60 +389,103 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                     child: Touchable(
                       onPress: () => context.go('/payments'),
                       activeOpacity: 0.9,
+                      // Deep slate "balance card": the orange Pay Now is the one bright element on it,
+                      // instead of pale peach on a pale page.
                       child: Container(
-                        padding: const EdgeInsets.all(18),
+                        clipBehavior: Clip.antiAlias,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(Radii.xl),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: c.isDark
-                                ? const [Color(0xFF2D1A0A), Color(0xFF3F2410)]
-                                : const [Color(0xFFFEF3C7), Color(0xFFFED7AA)],
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
                           ),
+                          boxShadow: Shadows.card(c),
+                          border: c.isDark ? Border.all(color: const Color(0xFF334155)) : null,
                         ),
-                        child: Row(children: [
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('FEES DUE',
-                                  style: TextStyle(
-                                      color: dueFg, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-                              if (_stats.loading)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6),
-                                  child: SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2.4, color: c.primary)),
-                                )
-                              else
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(statsFailed ? 'Unavailable' : 'RM ${localeNum(dueAmount)}',
-                                      style: TextStyle(
-                                          color: c.isDark ? const Color(0xFFFED7AA) : const Color(0xFF7C2D12),
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w800)),
+                        child: Stack(children: [
+                          // Soft brand glow, decoration only.
+                          Positioned(
+                            right: -40,
+                            top: -50,
+                            child: IgnorePointer(
+                              child: Container(
+                                width: 160,
+                                height: 160,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: RadialGradient(colors: [c.primary.hexA('55'), c.primary.hexA('00')]),
                                 ),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                    statsFailed
-                                        ? 'Open payments to retry'
-                                        : '$invoiceCount invoice${invoiceCount == 1 ? '' : 's'} pending',
-                                    style: TextStyle(color: dueFg, fontSize: 11, fontWeight: FontWeight.w500)),
                               ),
-                            ]),
+                            ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration:
-                                BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(Radii.md)),
-                            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text('Pay Now',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-                              SizedBox(width: 6),
-                              Icon(Ion.arrowForward, size: 14, color: Colors.white),
+                          Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Row(children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                margin: const EdgeInsets.only(right: 14),
+                                decoration: BoxDecoration(
+                                  color: c.primary.hexA('26'),
+                                  borderRadius: BorderRadius.circular(Radii.md),
+                                ),
+                                child: Icon(Ion.wallet, size: 22, color: c.primary),
+                              ),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  const Text('FEES DUE',
+                                      style: TextStyle(
+                                          color: Color(0xFFFDBA74),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.8)),
+                                  if (_stats.loading)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 6),
+                                      child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2.4, color: c.primary)),
+                                    )
+                                  else
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(statsFailed ? 'Unavailable' : 'RM ${localeNum(dueAmount)}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: -0.3)),
+                                    ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                        statsFailed
+                                            ? 'Open payments to retry'
+                                            : '$invoiceCount invoice${invoiceCount == 1 ? '' : 's'} pending',
+                                        style: const TextStyle(
+                                            color: Color(0xFFCBD5E1), fontSize: 12, fontWeight: FontWeight.w500)),
+                                  ),
+                                ]),
+                              ),
+                              Container(
+                                constraints: const BoxConstraints(minHeight: 44),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: c.primary,
+                                  borderRadius: BorderRadius.circular(999),
+                                  boxShadow: [BoxShadow(color: c.primary.hexA('66'), blurRadius: 14, offset: const Offset(0, 4))],
+                                ),
+                                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Text('Pay Now',
+                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+                                  SizedBox(width: 6),
+                                  Icon(Ion.arrowForward, size: 15, color: Colors.white),
+                                ]),
+                              ),
                             ]),
                           ),
                         ]),

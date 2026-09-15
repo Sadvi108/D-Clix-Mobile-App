@@ -141,20 +141,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       );
     }
 
-    Widget infoRow(IconData icon, String text) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-              child: Icon(icon, size: 18, color: c.textSecondary),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: c.textSecondary, height: 17 / 12))),
-          ]),
-        );
-
     Widget divider() => Container(height: 1, color: c.border);
     Widget sectionTitle(String t) => Padding(
           padding: const EdgeInsets.only(top: 18, bottom: 10),
@@ -329,25 +315,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       ),
                   ],
                 ]),
-              ),
-
-              sectionTitle('How delivery works'),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: card(),
-                child: Column(children: [
-                  infoRow(Ion.logoAndroid, 'Android: alerts arrive with the app open or closed. Long-press an alert to fine-tune its channel in system settings.'),
-                  divider(),
-                  infoRow(Ion.logoApple, 'iOS: alerts arrive with the app open or closed, using the bundled chime and your ringer switch.'),
-                  divider(),
-                  infoRow(Ion.globeOutline, 'Web: alerts arrive while a D-CLIX tab is open, even in the background. Sound needs one click on the page first, which browsers require before any audio can play.'),
-                ]),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Text(
-                    'The club server delivers notifications to the app, which checks for new ones every minute while open and about every 15 minutes in the background.',
-                    style: TextStyle(fontSize: 11, color: c.textMuted, height: 16 / 11)),
               ),
             ],
           ),
