@@ -6,14 +6,16 @@
 ### ============================
 
 ### Login (Swagger: POST /Account/Authenticate)
+# This repository is public: never type an account in here. Put it in flutter_app/.env
+# (gitignored) as DCLIX_TEST_USER=... and DCLIX_TEST_PASS=...
 # @name login
 POST {{baseUrl}}/Account/Authenticate
 Content-Type: application/json
 Accept: application/json
 
 {
-  "username": "Aunty1",
-  "password": "1234",
+  "username": "{{$dotenv DCLIX_TEST_USER}}",
+  "password": "{{$dotenv DCLIX_TEST_PASS}}",
   "userType": 3,
   "accessMethod": 0,
   "deviceType": "mobile"

@@ -66,7 +66,6 @@ const _noDataNeeded = {
   'instructor_reports_screen', // a menu of report routes
   'user_guide_screen', // static content, deliberately offline
   'bcpg_webview_screen', // drives a WebView, not the API
-  'api_test_screen', // diagnostics; hits raw paths by string
 };
 
 /// The contract each screen is expected to keep. Names are Api method names.
@@ -167,6 +166,8 @@ void main() {
         .toList();
     expect(nowWired, isEmpty,
         reason: 'these are exempted but now call the API: $nowWired');
+    final gone = _noDataNeeded.where((n) => screens[n] == null).toList();
+    expect(gone, isEmpty, reason: 'these are exempted but no longer exist: $gone');
   });
 
   test('every screen in the expected map still calls its endpoints', () {

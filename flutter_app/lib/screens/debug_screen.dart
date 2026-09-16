@@ -9,7 +9,8 @@ import 'package:provider/provider.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 
-/// Always-accessible debug dump for the current session.
+/// Debug dump for the current session. Debug builds only: see `developerRoutes`, which keeps
+/// it out of release builds because it shows the bearer token.
 ///
 /// Open via `localhost:3000/#/debug` after login. Shows every cached
 /// response, every computed value, and exposes a one-tap "Copy all JSON"

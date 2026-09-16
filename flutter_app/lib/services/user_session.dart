@@ -1174,7 +1174,8 @@ class UserSession extends ChangeNotifier {
       _checkStoreVersion();
       return true;
     } catch (e) {
-      error = e.toString();
+      // Shown verbatim on the sign-in screen: never the raw exception text.
+      error = friendlyError(e);
       return false;
     } finally {
       loading = false;
@@ -1578,7 +1579,7 @@ class UserSession extends ChangeNotifier {
       await _loadAll();
       return true;
     } catch (e) {
-      error = e.toString();
+      error = friendlyError(e);
       debugPrint('switchBranch failed: $e');
       return false;
     } finally {

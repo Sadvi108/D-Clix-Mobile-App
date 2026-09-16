@@ -133,8 +133,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (ok) {
       context.go(UserSession.instance.isInstructor ? '/instructor/home' : '/home');
     } else {
-      final raw = UserSession.instance.error ?? '';
-      final msg = raw.replaceFirst('Exception: ', '').replaceAll('❌', '').trim();
+      // UserSession.error is already user-facing text (see friendlyError).
+      final msg = UserSession.instance.error ?? '';
       setState(() => _error = msg.isEmpty ? 'Login failed. Check your credentials.' : msg);
     }
   }

@@ -92,6 +92,11 @@ int? apiEnvelopeErrorCode(dynamic resp) {
 String friendlyError(Object? e) {
   final raw = (e ?? '').toString();
   final lower = raw.toLowerCase();
+  // A FormatException quotes the body it could not parse. Over plain HTTP that body can be a
+  // Wi-Fi sign-in or proxy page answering in place of the API: raw HTML.
+  if (raw.startsWith('FormatException')) {
+    return 'Unexpected response from the server. Please try again.';
+  }
   if (raw.length > 200 ||
       RegExp(r'nvarchar|varchar|sql|ado\.net|stack trace|System\.|Microsoft\.|Npgsql|ORA-\d|constraint|column name|object reference not set|inner exception|\.cs:line',
               caseSensitive: false)

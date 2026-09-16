@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -106,12 +107,28 @@ GoRoute _reportRoute(String path, String title, ReportFetcher fetcher) {
   );
 }
 
+/// Developer screens, registered in debug builds only. The /debug dump shows the whole
+/// session, bearer token included, so a release build must not carry it.
+@visibleForTesting
+List<RouteBase> developerRoutes({bool enabled = kDebugMode}) => [
+      if (enabled) GoRoute(path: '/debug', builder: (_, __) => const DebugScreen()),
+    ];
+
+/// Locations that open without signing in.
+@visibleForTesting
+Set<String> publicPaths({bool developerTools = kDebugMode}) => {
+      '/',
+      '/login',
+      '/user-guide',
+      if (developerTools) '/debug',
+    };
+
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   observers: [LiveRefreshNavigatorObserver()],
   redirect: (context, state) {
     final loc = state.matchedLocation;
-    if (['/', '/login', '/user-guide', '/debug'].contains(loc)) return null;
+    if (publicPaths().contains(loc)) return null;
     if (!UserSession.instance.isLoggedIn) return '/login';
     if (loc.startsWith('/instructor') && !UserSession.instance.isInstructor)
       return '/home';
@@ -314,7 +331,7 @@ final GoRouter appRouter = GoRouter(
         path: '/notification-settings',
         pageBuilder: (_, s) =>
             _fadeThrough(s.pageKey, const NotificationSettingsScreen())),
-    GoRoute(path: '/debug', builder: (_, __) => const DebugScreen()),
+    ...developerRoutes(),
     GoRoute(
         path: '/attendance',
         pageBuilder: (_, s) =>
