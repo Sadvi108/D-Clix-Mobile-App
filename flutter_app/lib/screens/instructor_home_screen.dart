@@ -8,26 +8,60 @@ import '../services/rn_api.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
+import '../widgets/premium_kit.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 
-typedef _Tile = ({String id, String label, IconData icon, Color color});
+typedef _Tile = ({String id, String label, IconData icon, Color color, String group});
 
-/// Quick Access tiles — `TILES` in `frontend/src/screens/InstructorHome.tsx`.
+const _classes = 'Classes & students';
+const _payments = 'Payments & records';
+
+/// Quick Access tiles — `TILES` in `frontend/src/screens/InstructorHome.tsx`, grouped.
 const List<_Tile> _tiles = [
-  (id: 'training-time', label: 'Training Time', icon: Ion.timeOutline, color: Color(0xFFF59E0B)),
-  (id: 'activities', label: 'Activities', icon: Ion.pulseOutline, color: Color(0xFF10B981)),
   // Attendance is self-scoped server-side; the screen shows the class list + centre QR.
-  (id: 'update-attendance', label: 'Class Check-In', icon: Ion.checkmarkDoneCircleOutline, color: Color(0xFF4F46E5)),
-  (id: 'receipt', label: 'Receipt', icon: Ion.receiptOutline, color: Color(0xFF0EA5E9)),
-  (id: 'grading-schedule', label: 'Grading Schedule', icon: Ion.schoolOutline, color: Color(0xFF9333EA)),
-  (id: 'tournament-summary', label: 'Tournament Summary', icon: Ion.trophyOutline, color: Color(0xFFEF4444)),
-  (id: 'collections', label: 'Collections', icon: Ion.cashOutline, color: Color(0xFFDB2777)),
-  (id: 'missing-invoice', label: 'Missing Invoice', icon: Ion.documentTextOutline, color: Color(0xFFF97316)),
-  (id: 'fee-master', label: 'Fee Master', icon: Ion.pricetagsOutline, color: Color(0xFF64748B)),
-  (id: 'new-student', label: 'New Student', icon: Ion.personAddOutline, color: Color(0xFF10B981)),
-  (id: 'payment-slip', label: 'Payment Slip', icon: Ion.documentAttachOutline, color: Color(0xFF4F46E5)),
-  (id: 'more', label: 'More', icon: Ion.gridOutline, color: Color(0xFF0EA5E9)),
+  (
+    id: 'update-attendance',
+    label: 'Class Check-In',
+    icon: Ion.checkmarkDoneCircleOutline,
+    color: PremiumTint.indigo,
+    group: _classes
+  ),
+  (id: 'training-time', label: 'Training Time', icon: Ion.timeOutline, color: PremiumTint.amber, group: _classes),
+  (id: 'new-student', label: 'New Student', icon: Ion.personAddOutline, color: PremiumTint.green, group: _classes),
+  (
+    id: 'grading-schedule',
+    label: 'Grading Schedule',
+    icon: Ion.schoolOutline,
+    color: PremiumTint.violet,
+    group: _classes
+  ),
+  (
+    id: 'tournament-summary',
+    label: 'Tournament Summary',
+    icon: Ion.trophyOutline,
+    color: PremiumTint.red,
+    group: _classes
+  ),
+  (id: 'activities', label: 'Activities', icon: Ion.pulseOutline, color: PremiumTint.teal, group: _classes),
+  (id: 'collections', label: 'Collections', icon: Ion.cashOutline, color: PremiumTint.pink, group: _payments),
+  (
+    id: 'payment-slip',
+    label: 'Payment Slip',
+    icon: Ion.documentAttachOutline,
+    color: PremiumTint.violet,
+    group: _payments
+  ),
+  (
+    id: 'missing-invoice',
+    label: 'Missing Invoice',
+    icon: Ion.documentTextOutline,
+    color: PremiumTint.orange,
+    group: _payments
+  ),
+  (id: 'receipt', label: 'Receipt', icon: Ion.receiptOutline, color: PremiumTint.sky, group: _payments),
+  (id: 'fee-master', label: 'Fee Master', icon: Ion.pricetagsOutline, color: PremiumTint.slate, group: _payments),
+  (id: 'more', label: 'All Reports', icon: Ion.gridOutline, color: PremiumTint.sky, group: _payments),
 ];
 
 /// `TILE_ROUTES`. Activities and Fee Master were "coming soon" in RN; this app has working
@@ -46,6 +80,20 @@ const Map<String, String> _tileRoutes = {
   'new-student': '/instructor/reports/new-student',
   'more': '/instructor/reports',
 };
+
+/// Icon for a MyClubStats row by its label.
+IconData _statIconFor(String text) {
+  final t = text.toLowerCase();
+  if (t.contains('student')) return Ion.people;
+  if (t.contains('training')) return Ion.time;
+  if (t.contains('grading')) return Ion.ribbon;
+  if (t.contains('tournament')) return Ion.trophy;
+  if (t.contains('slip')) return Ion.receipt;
+  if (t.contains('payment')) return Ion.card;
+  if (t.contains('purchase')) return Ion.bagHandle;
+  if (t.contains('registration')) return Ion.personAdd;
+  return Ion.statsChart;
+}
 
 /// Port of `frontend/src/screens/InstructorHome.tsx` (Expo v2.11.1).
 class InstructorHomeScreen extends StatefulWidget {
@@ -92,7 +140,6 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
     final session = context.watch<UserSession>();
     final user = session.authData ?? const <String, dynamic>{};
     String userField(String k) => '${user[k] ?? ''}'.trim();
-    final top = MediaQuery.paddingOf(context).top;
     final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
 
     final dueRows = _dues.data ?? const [];
@@ -101,149 +148,164 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
     final offers = ((_stats.data?['myoffers'] as List?) ?? const []).whereType<Map>().toList();
     final unread = session.unreadNotifications;
     // MyClubStats rows: id = count, text = label, value = display order ("1".."10").
-    final rows = [...?_clubStats.data]
-      ..sort((a, b) => RnApi.number(a['value']).compareTo(RnApi.number(b['value'])));
+    final rows = [...?_clubStats.data]..sort((a, b) => RnApi.number(a['value']).compareTo(RnApi.number(b['value'])));
 
-    final dueFg = c.isDark ? const Color(0xFFFDBA74) : const Color(0xFF9A3412);
     final duesFailed = _dues.error != null && _dues.data == null;
-
-    Widget iconBtn(IconData icon, VoidCallback onTap, {int badge = 0}) => Touchable(
-          onPress: onTap,
-          activeOpacity: 0.8,
-          child: SizedBox(
-            width: 42,
-            height: 42,
-            child: Stack(clipBehavior: Clip.none, children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(color: Color(0x38FFFFFF), shape: BoxShape.circle),
-                child: Icon(icon, size: 20, color: Colors.white),
-              ),
-              if (badge > 0)
-                Positioned(
-                  top: -3,
-                  right: -3,
-                  child: Container(
-                    constraints: const BoxConstraints(minWidth: 18),
-                    height: 18,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: c.primary, width: 1.5),
-                    ),
-                    child: Text(badge > 99 ? '99+' : '$badge',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-                  ),
-                ),
-            ]),
-          ),
-        );
-
-    Widget sectionHead(String title) => Padding(
-          padding: const EdgeInsets.fromLTRB(Gaps.xl, 24, Gaps.xl, 12),
-          child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.textPrimary)),
-        );
-
-    BoxDecoration cardDeco(double r) => BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(r),
-          boxShadow: Shadows.soft(c),
-          border: c.isDark ? Border.all(color: c.border) : null,
-        );
-
-    Widget card(Widget child) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: Gaps.xl),
-          padding: const EdgeInsets.all(16),
-          decoration: cardDeco(Radii.xl),
-          child: child,
-        );
-
-    Widget spinner() => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Center(
-            child: SizedBox(
-                width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: c.primary)),
-          ),
-        );
-
-    Widget empty(String text) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text(text, textAlign: TextAlign.center, style: TextStyle(color: c.textSecondary, fontSize: 13)),
-        );
-
     final clubName = userField('clubName');
     final name = userField('name');
     final clubPic = UserSession.resolvePhotoUrl(userField('clubPic'));
     const avatarFallback = ColoredBox(
       color: Color(0x40FFFFFF),
-      child: Center(child: Icon(Ion.business, size: 26, color: Color(0xD9FFFFFF))),
+      child: Center(child: Icon(Ion.business, size: 24, color: Color(0xD9FFFFFF))),
+    );
+
+    const statTints = [
+      PremiumTint.indigo,
+      PremiumTint.green,
+      PremiumTint.amber,
+      PremiumTint.pink,
+      PremiumTint.sky,
+      PremiumTint.violet,
+      PremiumTint.red,
+      PremiumTint.teal,
+    ];
+
+    Widget grid(List<Widget> children, {int columns = 3}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Gaps.xl),
+          child: LayoutBuilder(builder: (context, box) {
+            const gap = Gaps.sm + 2;
+            final w = (box.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(spacing: gap, runSpacing: gap, children: [
+              for (final child in children) SizedBox(width: w, child: child),
+            ]);
+          }),
+        );
+
+    Widget spinner() => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          child: Center(
+            child:
+                SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: c.primary)),
+          ),
+        );
+
+    Widget emptyCard(IconData icon, String text) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: Gaps.xl),
+          padding: const EdgeInsets.all(16),
+          decoration: premiumCard(c),
+          child: Row(children: [
+            TintedIcon(icon, tint: PremiumTint.slate, size: 36),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text, style: TextStyle(color: c.textSecondary, fontSize: 13))),
+          ]),
+        );
+
+    final header = PremiumHeader(
+      title: name.isEmpty ? 'Instructor' : name,
+      subtitle: clubName.isEmpty ? 'Instructor' : '$clubName · Instructor',
+      leading: Container(
+        width: 52,
+        height: 52,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: clubPic.isEmpty ? null : Colors.white,
+          border: const Border.fromBorderSide(BorderSide(color: Color(0x99FFFFFF), width: 2)),
+        ),
+        child: clubPic.isEmpty
+            ? avatarFallback
+            : CachedNetworkImage(imageUrl: clubPic, fit: BoxFit.cover, errorWidget: (_, __, ___) => avatarFallback),
+      ),
+      actions: [
+        HeaderIconButton(icon: Ion.settingsOutline, label: 'Settings', onTap: () => context.go('/instructor/settings')),
+        HeaderIconButton(
+            icon: Ion.notificationsOutline,
+            label: 'Notifications',
+            badge: unread,
+            onTap: () => context.push('/notifications')),
+      ],
+    );
+
+    final dues = Padding(
+      padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.lg, Gaps.xl, 0),
+      child: Semantics(
+        button: true,
+        label: duesFailed
+            ? 'Outstanding dues unavailable, open Pay Your Dues'
+            : 'Outstanding dues RM ${money2(dueAmount)}, $invoiceCount invoices',
+        excludeSemantics: true,
+        child: Touchable(
+          onPress: () => context.push('/invoices'),
+          activeOpacity: 0.9,
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: premiumSlate(c),
+            child: Stack(children: [
+              const SlateGlow(),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Row(children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    margin: const EdgeInsets.only(right: 14),
+                    decoration:
+                        BoxDecoration(color: c.primary.hexA('26'), borderRadius: BorderRadius.circular(Radii.md)),
+                    child: Icon(Ion.wallet, size: 22, color: c.primary),
+                  ),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('OUTSTANDING DUES',
+                          style: TextStyle(
+                              color: Color(0xFFFDBA74), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                      const SizedBox(height: 4),
+                      if (_dues.loading && _dues.data == null)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white)),
+                        )
+                      else
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(duesFailed ? 'Unavailable' : 'RM ${money2(dueAmount)}',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+                        ),
+                      const SizedBox(height: 2),
+                      Text(
+                          duesFailed
+                              ? 'Tap to open Pay Your Dues'
+                              : '$invoiceCount invoice${invoiceCount == 1 ? '' : 's'} due',
+                          style:
+                              const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12.5, fontWeight: FontWeight.w500)),
+                    ]),
+                  ),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(999)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('View', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+                      SizedBox(width: 4),
+                      Icon(Ion.arrowForward, size: 14, color: Colors.white),
+                    ]),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
     );
 
     return ColoredBox(
       color: c.background,
       child: Column(children: [
-        // One rounded block from the status bar down; a square orange backing used to fill the
-        // rounded bottom corners back in.
-        Container(
-          padding: EdgeInsets.only(top: top),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
-            boxShadow: Shadows.soft(c),
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(Gaps.xl, 6, Gaps.xl, 26),
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(children: [
-                Expanded(
-                  child: Row(children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: clubPic.isEmpty ? null : Colors.white,
-                        border: const Border.fromBorderSide(BorderSide(color: Color(0x99FFFFFF), width: 2)),
-                      ),
-                      child: clubPic.isEmpty
-                          ? avatarFallback
-                          : CachedNetworkImage(
-                              imageUrl: clubPic,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => avatarFallback,
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        const Text('Welcome,', style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 12)),
-                        Text(name.isEmpty ? 'Instructor' : name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
-                        const SizedBox(height: 2),
-                        Text('(${clubName.isEmpty ? 'Club' : clubName})',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Color(0xFFFFF7ED), fontSize: 12, fontWeight: FontWeight.w600)),
-                      ]),
-                    ),
-                  ]),
-                ),
-                const SizedBox(width: 12),
-                iconBtn(Ion.settingsOutline, () => context.go('/instructor/settings')),
-                const SizedBox(width: 10),
-                iconBtn(Ion.notificationsOutline, () => context.push('/notifications'), badge: unread),
-              ]),
-            ),
-          ),
-        ),
+        header,
         Expanded(
           child: RefreshIndicator(
             color: c.primary,
@@ -251,178 +313,65 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
             child: ListView(
               padding: EdgeInsets.only(bottom: tabBarHeight + 24),
               children: [
-                // Dues summary card
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(Gaps.xl, 18, Gaps.xl, 0),
-                  child: Touchable(
-                    onPress: () => context.push('/invoices'),
-                    activeOpacity: 0.9,
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(Radii.xl),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: c.isDark
-                              ? const [Color(0xFF2D1A0A), Color(0xFF3F2410)]
-                              : const [Color(0xFFFEF3C7), Color(0xFFFED7AA)],
-                        ),
-                      ),
-                      child: Row(children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: c.isDark ? const Color(0x40000000) : const Color(0xB3FFFFFF),
-                          ),
-                          child: Icon(Ion.notifications, size: 22, color: c.primary),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            if (_dues.loading && _dues.data == null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2.4, color: c.primary)),
-                              )
-                            else
-                              Text(
-                                duesFailed
-                                    ? "Dues couldn't be loaded"
-                                    : '$invoiceCount invoice${invoiceCount == 1 ? '' : 's'} ${invoiceCount == 1 ? 'is' : 'are'} due',
-                                style: TextStyle(
-                                    color: c.isDark ? const Color(0xFFFED7AA) : const Color(0xFF7C2D12),
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800),
-                              ),
-                            const SizedBox(height: 3),
-                            Text(
-                              duesFailed ? 'Tap to open Pay Your Dues' : 'RM ${money2(dueAmount)} total due amount',
-                              style: TextStyle(color: dueFg, fontSize: 12, fontWeight: FontWeight.w600),
-                            ),
-                          ]),
-                        ),
-                        const SizedBox(width: 14),
-                        Icon(Ion.chevronForward, size: 18, color: dueFg),
-                      ]),
-                    ),
-                  ),
-                ),
-
-                sectionHead('Quick Access'),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Gaps.lg),
-                  child: LayoutBuilder(builder: (context, box) {
-                    final w = box.maxWidth * .30;
-                    final gap = (box.maxWidth - w * 3) / 2;
-                    return Wrap(spacing: gap, runSpacing: 14, children: [
-                      for (final t in _tiles)
-                        SizedBox(
-                          width: w,
-                          child: Touchable(
-                            onPress: () => _onTile(t),
-                            activeOpacity: 0.8,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-                              decoration: cardDeco(Radii.lg),
-                              child: Column(children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  decoration: BoxDecoration(
-                                      shape: BoxShape.circle, color: t.color.hexA(c.isDark ? '33' : '18')),
-                                  child: Icon(t.icon, size: 22, color: t.color),
-                                ),
-                                SizedBox(
-                                  height: 28,
-                                  child: Text(t.label,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: c.textPrimary,
-                                          fontWeight: FontWeight.w600,
-                                          height: 14 / 11)),
-                                ),
-                              ]),
-                            ),
-                          ),
-                        ),
-                    ]);
-                  }),
-                ),
-
-                sectionHead('Latest Updates'),
-                card(_clubStats.loading
-                    ? spinner()
-                    : rows.isEmpty
-                        ? empty('No updates right now.')
-                        : Column(children: [
-                            for (var i = 0; i < rows.length; i++) ...[
-                              if (i > 0) Container(height: 1, color: c.border),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Row(children: [
-                                  Expanded(
-                                    child: Text('${rows[i]['text'] ?? ''}',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            fontSize: 14, color: c.textPrimary, fontWeight: FontWeight.w600)),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text('${rows[i]['id'] ?? ''}',
-                                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: c.primary)),
-                                ]),
-                              ),
-                            ],
-                          ])),
-
-                sectionHead('Latest News'),
-                if (_stats.loading)
-                  card(spinner())
-                else if (offers.isNotEmpty)
-                  for (final o in offers.take(2))
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: cardDeco(Radii.lg),
-                      child: Row(children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-                          child: Icon(Ion.megaphoneOutline, size: 20, color: c.primary),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${o['name'] ?? ''}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 14, color: c.textPrimary, fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 3),
-                            Text(('${o['code'] ?? ''}'.isEmpty ? 'NEWS' : '${o['code']}').toUpperCase(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: c.textSecondary,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5)),
-                          ]),
-                        ),
-                      ]),
-                    )
+                dues,
+                for (final group in const [_classes, _payments]) ...[
+                  SectionLabel(group),
+                  grid([
+                    for (final t in _tiles.where((t) => t.group == group))
+                      PremiumTile(icon: t.icon, tint: t.color, label: t.label, onTap: () => _onTile(t)),
+                  ]),
+                ],
+                SectionLabel('Club at a glance',
+                    trailing: _clubStats.loading && rows.isNotEmpty
+                        ? SizedBox(
+                            width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))
+                        : null),
+                if (_clubStats.loading && rows.isEmpty)
+                  spinner()
+                else if (rows.isEmpty)
+                  emptyCard(Ion.statsChartOutline, 'No club figures right now.')
                 else
-                  card(empty('No news right now.')),
+                  grid(columns: 2, [
+                    for (final (i, r) in rows.indexed)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: premiumCard(c, radius: Radii.lg),
+                        child: Row(children: [
+                          TintedIcon(_statIconFor('${r['text'] ?? ''}'), tint: statTints[i % statTints.length]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text('${r['id'] ?? ''}',
+                                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: c.textPrimary)),
+                              ),
+                              Text('${r['text'] ?? ''}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11, color: c.textSecondary, fontWeight: FontWeight.w600)),
+                            ]),
+                          ),
+                        ]),
+                      ),
+                  ]),
+                const SectionLabel('Latest news'),
+                if (_stats.loading && offers.isEmpty)
+                  spinner()
+                else if (offers.isEmpty)
+                  emptyCard(Ion.megaphoneOutline, 'No news right now.')
+                else
+                  GroupCard(children: [
+                    for (final o in offers.take(3))
+                      PremiumRow(
+                        icon: Ion.megaphoneOutline,
+                        tint: PremiumTint.orange,
+                        title: '${o['name'] ?? ''}',
+                        titleLines: 2,
+                        subtitle: ('${o['code'] ?? ''}'.isEmpty ? 'News' : '${o['code']}').toUpperCase(),
+                      ),
+                  ]),
               ],
             ),
           ),

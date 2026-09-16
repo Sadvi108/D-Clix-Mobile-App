@@ -6,6 +6,7 @@ import '../services/response_utils.dart';
 import '../services/rn_api.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
+import '../widgets/premium_kit.dart';
 import '../widgets/report_kit.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
@@ -28,7 +29,7 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
     _counts;
   }
 
-  String _fmt(dynamic n) => (_counts.loading || _updating) ? '…' : '${RnApi.number(n).toInt()}';
+  bool get _busy => _counts.loading || _updating;
 
   /// Open a type's live detail list (typeId 1=cash, 2=online/fpx, 3=bank-in slip).
   void _openList(int typeId, String label) =>
@@ -56,28 +57,64 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final top = MediaQuery.paddingOf(context).top;
     final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
     final d = _counts.data ?? const <String, dynamic>{};
-    final cards = <({String label, IconData icon, VoidCallback onTap})>[
-      (label: 'Cash Payments (${_fmt(d['cash'])})', icon: Ion.cashOutline, onTap: () => _openList(1, 'Cash Payments')),
-      (label: 'Online Payments (${_fmt(d['fpx'])})', icon: Ion.cardOutline, onTap: () => _openList(2, 'Online Payments')),
-      (label: 'Payment Slips (${_fmt(d['dbt'])})', icon: Ion.documentAttachOutline, onTap: () => _openList(3, 'Payment Slips')),
-      (label: _updating ? 'Updating…' : 'Update Collection', icon: Ion.syncOutline, onTap: _update),
+    int n(dynamic v) => RnApi.number(v).toInt();
+    final types = [
+      (
+        typeId: 1,
+        label: 'Cash Payments',
+        hint: 'Collected at the centre',
+        icon: Ion.cashOutline,
+        tint: PremiumTint.green,
+        count: n(d['cash'])
+      ),
+      (
+        typeId: 2,
+        label: 'Online Payments',
+        hint: 'Card, FPX and e-wallet',
+        icon: Ion.cardOutline,
+        tint: PremiumTint.sky,
+        count: n(d['fpx'])
+      ),
+      (
+        typeId: 3,
+        label: 'Payment Slips',
+        hint: 'Bank-in slips to review',
+        icon: Ion.documentAttachOutline,
+        tint: PremiumTint.violet,
+        count: n(d['dbt'])
+      ),
     ];
+    final total = types.fold<int>(0, (s, t) => s + t.count);
+    final hasCounts = _counts.data != null;
+
+    Widget countBadge(int value, Color tint) => Container(
+          constraints: const BoxConstraints(minWidth: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: tint.hexA(c.isDark ? '2E' : '17'), borderRadius: BorderRadius.circular(999)),
+          child: _busy && !hasCounts
+              ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: tint))
+              : Text('$value', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tint)),
+        );
 
     return ColoredBox(
       color: c.background,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(Gaps.xl, top + 8, Gaps.xl, 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Collections',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: c.textPrimary)),
-            const SizedBox(height: 4),
-            Text('Track payments received across your club',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c.textSecondary)),
-          ]),
+        PremiumHeader(
+          title: 'Collections',
+          subtitle: 'Payments received across your club',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0x2EFFFFFF),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0x33FFFFFF)),
+            ),
+            child: const Icon(Ion.wallet, size: 20, color: Colors.white),
+          ),
         ),
         Expanded(
           child: RefreshIndicator(
@@ -85,45 +122,106 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
             onRefresh: _counts.reload,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(Gaps.lg, Gaps.md, Gaps.lg, tabBarHeight + 24),
+              padding: EdgeInsets.only(bottom: tabBarHeight + 24),
               children: [
-                if (_counts.error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: Gaps.lg),
-                    child: ErrorState(message: _counts.error, onRetry: _counts.reload, compact: true),
-                  ),
-                LayoutBuilder(builder: (context, box) {
-                  final w = box.maxWidth * .47;
-                  return Wrap(spacing: box.maxWidth - w * 2, runSpacing: Gaps.lg, children: [
-                    for (final card in cards)
-                      SizedBox(
-                        width: w,
-                        child: Touchable(
-                          activeOpacity: 0.85,
-                          onPress: card.onTap,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: Gaps.xl, horizontal: Gaps.md),
-                            decoration: rnCard(c, radius: Radii.xl),
-                            child: Column(children: [
-                              Container(
-                                width: 56,
-                                height: 56,
-                                margin: const EdgeInsets.only(bottom: Gaps.md),
-                                decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-                                child: Icon(card.icon, size: 24, color: c.primary),
-                              ),
-                              Text(card.label,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
+                // Not pulled up under the header: the list viewport would clip it.
+                Padding(
+                  padding: const EdgeInsets.only(top: Gaps.lg),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: Gaps.xl),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: premiumSlate(c),
+                    child: Stack(children: [
+                      const SlateGlow(),
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Row(children: [
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Text('RECORDS TO REVIEW',
                                   style: TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.w600, color: c.textPrimary, height: 20 / 16)),
+                                      color: Color(0xFFFDBA74),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.2)),
+                              const SizedBox(height: 6),
+                              Text(hasCounts ? '$total' : (_busy ? '…' : '—'),
+                                  style:
+                                      const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 2),
+                              Text(
+                                  hasCounts
+                                      ? '${types[0].count} cash · ${types[1].count} online · ${types[2].count} slips'
+                                      : 'Counts load from the server',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12.5)),
                             ]),
                           ),
-                        ),
+                          const SizedBox(width: 12),
+                          Semantics(
+                            button: true,
+                            label: 'Update Collection',
+                            excludeSemantics: true,
+                            child: Touchable(
+                              onPress: _updating ? null : _update,
+                              activeOpacity: 0.85,
+                              child: Container(
+                                constraints: const BoxConstraints(minHeight: 44),
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                decoration: BoxDecoration(
+                                  color: c.primary,
+                                  borderRadius: BorderRadius.circular(999),
+                                  boxShadow: [
+                                    BoxShadow(color: c.primary.hexA('66'), blurRadius: 14, offset: const Offset(0, 4))
+                                  ],
+                                ),
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  if (_updating)
+                                    const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  else
+                                    const Icon(Ion.syncOutline, size: 15, color: Colors.white),
+                                  const SizedBox(width: 6),
+                                  Text(_updating ? 'Updating…' : 'Update Collection',
+                                      style: const TextStyle(
+                                          color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12.5)),
+                                ]),
+                              ),
+                            ),
+                          ),
+                        ]),
                       ),
-                  ]);
-                }),
+                    ]),
+                  ),
+                ),
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (_counts.error != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(Gaps.xl, 16, Gaps.xl, 0),
+                      child: ErrorState(message: _counts.error, onRetry: _counts.reload, compact: true),
+                    ),
+                  const SectionLabel('By payment type'),
+                  GroupCard(children: [
+                    for (final t in types)
+                      PremiumRow(
+                        icon: t.icon,
+                        tint: t.tint,
+                        title: t.label,
+                        subtitle: t.hint,
+                        trailing: countBadge(t.count, t.tint),
+                        onTap: () => _openList(t.typeId, t.label),
+                      ),
+                  ]),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(Gaps.xl + 4, 14, Gaps.xl + 4, 0),
+                    child: Text(
+                        'Update Collection recalculates the counts on the server. Pull down to refresh what is shown.',
+                        style: TextStyle(fontSize: 12, color: c.textMuted, height: 1.4)),
+                  ),
+                ]),
               ],
             ),
           ),
