@@ -4,13 +4,16 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'router/app_router.dart';
+import 'services/extra_trust.dart';
 import 'services/user_session.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_provider.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Before any request: older Android phones cannot verify the photo host otherwise.
+  await ExtraTrust.install();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(
     MultiProvider(

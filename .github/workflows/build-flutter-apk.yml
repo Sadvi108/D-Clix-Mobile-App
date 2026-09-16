@@ -88,6 +88,9 @@ jobs:
           # missing hostname SAN. UAT checkout still needs a valid server certificate.
           grep -q uat_apimacuat /tmp/apk-resources.txt
           grep -qE '\.pem$' /tmp/apk-files.txt
+          # Older Android phones need this root to load member photos; a *.pem ignore rule
+          # dropped a certificate from CI once before.
+          grep -q 'flutter_assets/assets/certs/sectigo_public_server_authentication_root_r46.pem' /tmp/apk-files.txt
           mkdir -p build/release
           cp build/app/outputs/flutter-apk/app-release.apk build/release/
           cp build/app/outputs/bundle/release/app-release.aab build/release/

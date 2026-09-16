@@ -145,6 +145,9 @@ credentials.json
 # was on disk, and CI failed with "resource raw/uat_apimacuat not found". Keep the blanket
 # rule; keep this exception narrow.
 !flutter_app/android/app/src/main/res/raw/uat_apimacuat.pem
+# Same kind of exception: the PUBLIC Sectigo R46 root CA certificate the app trusts so older
+# Android phones can load member photos (lib/services/extra_trust.dart).
+!flutter_app/assets/certs/sectigo_public_server_authentication_root_r46.pem
 
 # Flutter/Dart build cache. `.dart_tool/chrome-device/` is a full Chrome PROFILE — it
 # contains Cookies, Login Data and Trust Tokens SQLite databases. 153 of those files were

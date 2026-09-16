@@ -76,6 +76,7 @@ flutter:
         - asset: assets/fonts/Ionicons.ttf
   assets:
     - assets/images/
+    - assets/certs/
     - assets/branding/
     # User-guide screenshots. Regenerate with:
     #   flutter test tool/capture_guide_shots.dart --dart-define=CAPTURE=true
