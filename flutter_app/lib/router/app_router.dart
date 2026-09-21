@@ -136,7 +136,9 @@ final GoRouter appRouter = GoRouter(
   },
   routes: [
     GoRoute(path: '/', builder: (_, __) => const SplashScreen()),
-    GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+    // Plain fade, no slide: the splash glides its logo and word onto this page's header,
+    // so the header must appear exactly where they land.
+    GoRoute(path: '/login', pageBuilder: (_, s) => _tabFade(s.pageKey, const LoginScreen())),
     ShellRoute(
       observers: [LiveRefreshNavigatorObserver()],
       builder: (context, state, child) =>
