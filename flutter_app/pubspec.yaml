@@ -6,7 +6,7 @@ publish_to: "none"
 # Both ship as applicationId com.dclix.clubapp, so this APK replaces the Expo one on a
 # member's phone. Android refuses to install a lower versionCode, so 7 would have failed
 # to update every existing install with "app not installed" and no further explanation.
-version: 2.13.2+23
+version: 2.14.0+25
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
