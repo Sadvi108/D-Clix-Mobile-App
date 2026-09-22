@@ -1,4 +1,4 @@
-// The launch intro: karate figure -> D/CLIX word -> badge -> glide into Login.
+// The launch intro: orange ring -> D/CLIX word -> badge -> glide into Login.
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -35,14 +35,19 @@ Future<void> _advance(WidgetTester tester, int ms) async {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('each stroke of the word grows out of the figure and ends on its glyph', () {
+  test('the ring draws itself, then each arc straightens into its glyph', () {
     expect(wordStrokes, hasLength(8));
+    expect(wordStrokes.first.a0, 180, reason: 'the ring starts on its left side');
+    expect(wordStrokes.last.a1, closeTo(540, 1e-9), reason: 'the eight arcs make one full ring');
     for (final s in wordStrokes) {
-      expect(s.at(0), s.from);
-      expect(s.at(1), s.to);
-      expect([...s.from, ...s.to].every((p) => p.dx.isFinite && p.dy.isFinite), isTrue);
+      expect(s.at(0), isNull, reason: 'nothing shows before the ring starts drawing');
+      for (final p in s.at(kIntroRingDrawnAt)!.pts) {
+        expect((p - const Offset(50, 50)).distance, closeTo(39.5, 1e-6));
+      }
+      expect(s.at(kIntroWordAt)!.pts, s.to);
+      expect(s.to.every((p) => p.dx.isFinite && p.dy.isFinite), isTrue);
     }
-    expect(wordStrokes.where((s) => s.ink == StrokeInk.slash), hasLength(1), reason: 'the kick trail becomes the slash');
+    expect(wordStrokes.where((s) => s.ink == StrokeInk.slash), hasLength(1));
   });
 
   test('every frame of both exits paints, in both themes', () {
@@ -71,7 +76,7 @@ void main() {
 
   testWidgets('plays the whole intro, then opens Login when no session is saved', (tester) async {
     await tester.pumpWidget(_app());
-    await _advance(tester, 2900);
+    await _advance(tester, 2100);
     expect(find.text('login page'), findsNothing, reason: 'the intro is still playing');
     await _advance(tester, 900);
     await tester.pumpAndSettle();

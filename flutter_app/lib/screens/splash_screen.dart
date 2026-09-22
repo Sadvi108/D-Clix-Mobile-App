@@ -8,124 +8,75 @@ import 'package:go_router/go_router.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 
-// Launch intro. A karate figure bows, punches and throws a roundhouse kick; its own lines
-// then morph into the D/CLIX wordmark while the orange kick trail becomes the slash. The
-// slash sends out a ring that bursts into the badge, ripples run while the session
+// Launch intro ("ring unfurl"). The badge's orange ring draws itself and pulses once, then
+// splits into eight arcs that straighten into the D/CLIX wordmark. The slash sends out a
+// ring that bursts into the badge above the word, ripples run while the session
 // restores, and the badge and word glide into the Login header (or the stage zooms away
 // into Home when a saved session was restored).
 //
 // Everything is drawn in a 100x100 "stage" square, the same units as the approved HTML
-// preview, so poses and timings carry over one to one.
+// preview, so timings and shapes carry over one to one.
 
 // Timeline, in milliseconds from the first frame.
-const double kIntroMorphAt = 1480; // the figure's lines start turning into the word
-const double kIntroWordAt = 2020; // the word has landed
-const double kIntroRevealAt = 2380; // the badge bursts open above the word
-const double kIntroExitMin = 2980; // earliest moment the splash may leave
-const double kIntroStillAt = 3300; // a settled frame: shown as-is when Reduce Motion is on
+const double kIntroRingDrawnAt = 380; // the ring has drawn itself; it pulses once
+const double kIntroUnfurlAt = 480; // the arcs start straightening into letters
+const double kIntroWordAt = 1220; // the word has formed
+const double kIntroRevealAt = 1580; // the badge bursts open above the word
+const double kIntroExitMin = 2180; // earliest moment the splash may leave
+const double kIntroStillAt = 2500; // a settled frame: shown as-is when Reduce Motion is on
 const double kIntroGlideMs = 600; // logged out: badge and word glide into the Login header
 const double kIntroZoomMs = 450; // logged in: the stage zooms away into Home
 
-const double _rigScale = 1.3; // the figure is drawn 1.3x its rig, about (50, 60)
 const double _wordScale = 1.25; // glyphs are designed at 22 units tall, drawn 1.25x
 const double _wordSlide = 66; // the word moves down this far to make room for the badge
 const double _ringR = 39.5; // the badge's own orange ring
 const double _badgeD = 96 / 1.24; // badge diameter
-const int _m = 60; // points per morphing stroke
+const Offset _ringCentre = Offset(50, 50);
+const int _m = 60; // points per stroke
 
 // ---------------------------------------------------------------------------------------
-// The figure. Pose = [hipX, hipY, torso, frontUpperArm, frontForearm, backUpperArm,
-// backForearm, frontThigh, frontShin, backThigh, backShin]. Angles in degrees, 0 = right,
-// 90 = down; the figure faces right.
-const _stand = <double>[48, 60, -88, 94, 92, 98, 96, 87, 89, 93, 91];
-const _bow = <double>[48, 60, -58, 100, 100, 104, 104, 86, 88, 94, 92];
-const _ready = <double>[48, 62, -84, 50, -55, 120, 10, 50, 88, 128, 112];
-const _punch = <double>[53, 66, -82, -8, -4, 118, -5, 35, 85, 125, 135];
-const _chamber = <double>[46, 61, -100, 35, -65, 150, 110, -15, 75, 100, 90];
-const _kick = <double>[44, 60, -115, 30, -70, 160, 120, -40, -50, 100, 88];
+// The word. Eight monoline strokes, each grown out of its own arc of the ring.
 
-class _Key {
-  const _Key(this.ms, this.pose, this.belt, [this.curve = Curves.easeInOutCubic]);
-  final double ms;
-  final List<double> pose;
-  final int belt; // index into the belt palette
-  final Curve curve; // easing into this key
-}
+enum StrokeInk { ink, slash }
 
-// The belt ranks up with each move: yellow, orange, green, blue, brown.
-const _keys = <_Key>[
-  _Key(0, _stand, 0),
-  _Key(260, _bow, 0),
-  _Key(420, _bow, 0),
-  _Key(640, _ready, 1),
-  _Key(780, _punch, 2, Curves.easeOutCubic),
-  _Key(880, _punch, 2),
-  _Key(1040, _ready, 2),
-  _Key(1200, _chamber, 3),
-  _Key(1360, _kick, 4, Curves.easeOutCubic),
-  _Key(1480, _kick, 4),
-];
-const _beltsLight = [Color(0xFFCA8A04), Color(0xFFEA580C), Color(0xFF16A34A), Color(0xFF2563EB), Color(0xFF92400E)];
-const _beltsDark = [Color(0xFFFACC15), Color(0xFFFB923C), Color(0xFF4ADE80), Color(0xFF60A5FA), Color(0xFFC08457)];
+class WordStroke {
+  WordStroke(this.to, this.a0, this.a1, this.flip, this.delay, this.ink);
 
-class _Pose {
-  _Pose(this.v, this._from, this._to, this._e);
-  final List<double> v;
-  final int _from, _to;
-  final double _e;
-  Color belt(List<Color> palette) => Color.lerp(palette[_from], palette[_to], _e)!;
-}
+  /// The finished glyph stroke, in stage units.
+  final List<Offset> to;
 
-_Pose _poseAt(double t) {
-  var i = 0;
-  while (i < _keys.length - 1 && t >= _keys[i + 1].ms) {
-    i++;
+  /// This stroke's arc of the ring, in degrees (0 = right, 90 = down), and whether the
+  /// arc runs against the glyph's direction.
+  final double a0, a1;
+  final bool flip;
+  final double delay;
+  final StrokeInk ink;
+
+  /// The stroke at time [t], or null while the ring has not drawn this arc yet.
+  ({List<Offset> pts, double e, double width})? at(double t) {
+    final drawn = 180 + 360 * Curves.easeInOutCubic.transform(_clamp01(t / kIntroRingDrawnAt));
+    if (drawn <= a0) return null;
+    var arc = _arc(a0, math.min(a1, drawn));
+    if (flip) arc = arc.reversed.toList();
+    final e = Curves.easeInOutCubic.transform(_clamp01((t - kIntroUnfurlAt - delay) / 460));
+    final pulse = t >= kIntroRingDrawnAt && t < kIntroUnfurlAt + 20
+        ? math.sin(math.pi * (t - kIntroRingDrawnAt) / 120).clamp(0.0, 1.0)
+        : 0.0;
+    return (
+      pts: [for (var i = 0; i < _m; i++) Offset.lerp(arc[i], to[i], e)!],
+      e: e,
+      width: _lerp(3 + pulse, 5.5 * _wordScale, e),
+    );
   }
-  final a = _keys[i], b = _keys[math.min(i + 1, _keys.length - 1)];
-  final e = identical(a, b) ? 0.0 : b.curve.transform(((t - a.ms) / (b.ms - a.ms)).clamp(0.0, 1.0));
-  return _Pose([for (var k = 0; k < a.pose.length; k++) a.pose[k] + (b.pose[k] - a.pose[k]) * e], a.belt, b.belt, e);
 }
+
+List<Offset> _arc(double a0, double a1) => [
+      for (var i = 0; i < _m; i++) _dir(_ringCentre, a0 + (a1 - a0) * i / (_m - 1), _ringR),
+    ];
 
 Offset _dir(Offset p, double deg, double r) {
   final a = deg * math.pi / 180;
   return p + Offset(math.cos(a) * r, math.sin(a) * r);
-}
-
-typedef _Joints = ({
-  Offset hip, Offset sh, Offset neck, Offset head, Offset eA, Offset hA, //
-  Offset eB, Offset hB, Offset kF, Offset fF, Offset kB, Offset fB,
-});
-
-_Joints _joints(List<double> v) {
-  final hip = Offset(v[0], v[1]), sh = _dir(hip, v[2], 18), neck = _dir(hip, v[2], 21);
-  final eA = _dir(sh, v[3], 12), eB = _dir(sh, v[5], 12), kF = _dir(hip, v[7], 17), kB = _dir(hip, v[9], 17);
-  return (
-    hip: hip, sh: sh, neck: neck, head: _dir(neck, v[2], 2.5 + 6.2), eA: eA, hA: _dir(eA, v[4], 12), //
-    eB: eB, hB: _dir(eB, v[6], 12), kF: kF, fF: _dir(kF, v[8], 17), kB: kB, fB: _dir(kB, v[10], 17),
-  );
-}
-
-/// Rig coordinates to stage coordinates.
-Offset _rig(Offset p) => Offset(50 + (p.dx - 50) * _rigScale, 60 + (p.dy - 60) * _rigScale);
-
-/// Where the kicking foot travels: drawn as the orange trail, then becomes the slash.
-final List<Offset> _kickTrail = [
-  for (var i = 0; i <= 120; i++) _rig(_joints(_poseAt(1040 + 320 * i / 120).v).fF),
-];
-final Offset _punchHand = _joints(_poseAt(780).v).hA;
-final Offset _kickFoot = _joints(_poseAt(1360).v).fF;
-
-// ---------------------------------------------------------------------------------------
-// The word. Each monoline glyph stroke is fed by one line of the figure at the kick.
-
-enum StrokeInk { ink, slash, belt }
-
-class MorphStroke {
-  MorphStroke(this.from, this.to, this.delay, this.w0, this.w1, this.ink);
-  final List<Offset> from, to;
-  final double delay, w0, w1;
-  final StrokeInk ink;
-  List<Offset> at(double e) => [for (var i = 0; i < to.length; i++) Offset.lerp(from[i], to[i], e)!];
 }
 
 Offset _w(Offset p) => Offset(50 + (p.dx - 50) * _wordScale, 52 + (p.dy - 52) * _wordScale);
@@ -138,12 +89,18 @@ Path _polyline(List<Offset> pts) {
   return p;
 }
 
-List<Offset> _sample(Path p, int n) {
+List<Offset> _sample(Path p) {
   final m = p.computeMetrics().single;
-  return [for (var i = 0; i < n; i++) m.getTangentForOffset(m.length * i / (n - 1))!.position];
+  return [for (var i = 0; i < _m; i++) m.getTangentForOffset(m.length * i / (_m - 1))!.position];
 }
 
-List<Offset> _resample(List<Offset> pts, int n) => _sample(_polyline(pts), n);
+double _length(List<Offset> pts) {
+  var d = 0.0;
+  for (var i = 1; i < pts.length; i++) {
+    d += (pts[i] - pts[i - 1]).distance;
+  }
+  return d;
+}
 
 double _gap(List<Offset> a, List<Offset> b) {
   var d = 0.0;
@@ -153,21 +110,9 @@ double _gap(List<Offset> a, List<Offset> b) {
   return d;
 }
 
-/// The eight strokes of D/CLIX, each with the figure line it grows out of.
-final List<MorphStroke> wordStrokes = () {
-  final pose = _poseAt(kIntroMorphAt), v = pose.v, j = _joints(v);
-  final bc = _dir(j.hip, v[2], 3);
-  const limb = 6.5 * _rigScale, glyph = 5.5 * _wordScale;
-  MorphStroke s(List<Offset> from, Path shape, double delay, double w0, [StrokeInk ink = StrokeInk.ink]) {
-    final to = _sample(shape, _m).map(_w).toList();
-    var src = _resample(from, _m);
-    final flipped = src.reversed.toList();
-    if (_gap(flipped, to) < _gap(src, to)) src = flipped;
-    return MorphStroke(src, to, delay, w0, glyph, ink);
-  }
-
-  List<Offset> rig(List<Offset> pts) => pts.map(_rig).toList();
-  final head = [for (var i = 0; i < _m; i++) _rig(_dir(j.head, -45 - 360 * i / (_m - 1), 6.2 / 2))];
+/// The eight strokes of D/CLIX, left to right, each owning a share of the ring
+/// proportional to its length, starting from the ring's left side and going clockwise.
+final List<WordStroke> wordStrokes = () {
   final dBowl = Path()
     ..moveTo(-2, 41)
     ..lineTo(4, 41)
@@ -176,17 +121,28 @@ final List<MorphStroke> wordStrokes = () {
   final c = Path()
     ..moveTo(50.8, 44.2)
     ..arcToPoint(const Offset(50.8, 59.8), radius: const Radius.circular(11), largeArc: true, clockwise: false);
-  return [
-    s(rig([j.sh, j.eB, j.hB]), _polyline(const [Offset(-2, 41), Offset(-2, 63)]), 0, limb), // back arm -> D stem
-    s(rig([j.hip, j.neck]), dBowl, 0, limb), // torso -> D bowl
-    s(_kickTrail, _polyline(const [Offset(22, 58), Offset(28, 46)]), 40, 3, StrokeInk.slash), // trail -> slash
-    s(head, c, 80, 6.2 * _rigScale), // head -> C
-    s(rig([j.hip, j.kB, j.fB]), _polyline(const [Offset(58, 41), Offset(58, 63), Offset(70, 63)]), 110, limb), // leg -> L
-    s(rig([_dir(bc, v[2] - 90, 5.5), _dir(bc, v[2] + 90, 5.5)]), _polyline(const [Offset(78, 41), Offset(78, 63)]), 130,
-        3 * _rigScale, StrokeInk.belt), // belt -> I
-    s(rig([j.sh, j.eA, j.hA]), _polyline(const [Offset(85, 41), Offset(101, 63)]), 160, limb), // punching arm -> X
-    s(rig([j.hip, j.kF, j.fF]), _polyline(const [Offset(101, 41), Offset(85, 63)]), 160, limb), // kicking leg -> X
+  final glyphs = <(Path, StrokeInk)>[
+    (_polyline(const [Offset(-2, 41), Offset(-2, 63)]), StrokeInk.ink), // D stem
+    (dBowl, StrokeInk.ink), // D bowl
+    (_polyline(const [Offset(22, 58), Offset(28, 46)]), StrokeInk.slash),
+    (c, StrokeInk.ink),
+    (_polyline(const [Offset(58, 41), Offset(58, 63), Offset(70, 63)]), StrokeInk.ink), // L
+    (_polyline(const [Offset(78, 41), Offset(78, 63)]), StrokeInk.ink), // I
+    (_polyline(const [Offset(85, 41), Offset(101, 63)]), StrokeInk.ink), // X
+    (_polyline(const [Offset(101, 41), Offset(85, 63)]), StrokeInk.ink), // X
   ];
+  final targets = [for (final g in glyphs) _sample(g.$1).map(_w).toList()];
+  final lengths = targets.map(_length).toList();
+  final total = lengths.reduce((a, b) => a + b);
+  final strokes = <WordStroke>[];
+  var a = 180.0;
+  for (var i = 0; i < glyphs.length; i++) {
+    final a0 = a, a1 = a + 360 * lengths[i] / total, arc = _arc(a0, a1);
+    a = a1;
+    final flip = _gap(arc.reversed.toList(), targets[i]) < _gap(arc, targets[i]);
+    strokes.add(WordStroke(targets[i], a0, a1, flip, i * 40.0, glyphs[i].$2));
+  }
+  return strokes;
 }();
 
 /// The finished word in stage units, after it has moved down under the badge.
@@ -382,7 +338,7 @@ class IntroPainter extends CustomPainter {
               : const [Color(0xFFFFFFFF), Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
         ).createShader(full),
     );
-    final glow = Rect.fromCircle(center: px(const Offset(50, 50)), radius: 150 / 1.24 * u);
+    final glow = Rect.fromCircle(center: px(_ringCentre), radius: 150 / 1.24 * u);
     canvas.drawRect(
       glow,
       Paint()
@@ -395,7 +351,7 @@ class IntroPainter extends CustomPainter {
     canvas.save();
     if (zooming) {
       final e = const Cubic(.5, 0, .75, 0).transform(_clamp01(since / kIntroZoomMs));
-      final mid = px(const Offset(50, 50));
+      final mid = px(_ringCentre);
       canvas
         ..translate(mid.dx, mid.dy)
         ..scale(1 + .9 * e)
@@ -417,7 +373,6 @@ class IntroPainter extends CustomPainter {
       ..save()
       ..translate(origin.dx, origin.dy)
       ..scale(u);
-    if (t < kIntroMorphAt) _figure(canvas, t);
     _ring(canvas, t);
     canvas.restore();
 
@@ -448,7 +403,7 @@ class IntroPainter extends CustomPainter {
       op = _lerp(1, .35, q);
       s = _lerp(1.12, 1, q);
     }
-    final r = Rect.fromCircle(center: const Offset(50, 50), radius: 85 / 1.24 * s);
+    final r = Rect.fromCircle(center: _ringCentre, radius: 85 / 1.24 * s);
     canvas.drawRect(
       r,
       Paint()
@@ -464,7 +419,7 @@ class IntroPainter extends CustomPainter {
       final start = kIntroRevealAt + delay;
       if (t < start) continue;
       final e = const Cubic(.2, .6, .35, 1).transform(((t - start) % 2100) / 2100);
-      canvas.drawCircle(const Offset(50, 50), _badgeD / 2 * (1 + e),
+      canvas.drawCircle(_ringCentre, _badgeD / 2 * (1 + e),
           _stroke(colors.primary.withValues(alpha: .6 * (1 - e) * fade), 2 / 1.24 * (1 + e)));
     }
   }
@@ -487,7 +442,7 @@ class IntroPainter extends CustomPainter {
       final b = math.sin(math.pi * (t - kIntroRevealAt - 900) / 2100);
       scale *= 1 + .035 * b * b;
     }
-    var rect = Rect.fromCircle(center: px(const Offset(50, 50)), radius: _badgeD * u / 2 * scale);
+    var rect = Rect.fromCircle(center: px(_ringCentre), radius: _badgeD * u / 2 * scale);
     if (glide > 0) rect = Rect.lerp(rect, logoTarget, glide)!;
     canvas.drawCircle(
       rect.center + Offset(0, rect.height * .06),
@@ -503,64 +458,17 @@ class IntroPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _figure(Canvas canvas, double t) {
-    final a = Curves.easeOutCubic.transform(_clamp01(t / 220));
-    final pose = _poseAt(t), v = pose.v, j = _joints(v);
-    final ink = colors.textPrimary.withValues(alpha: a);
-    final s = .9 + .1 * a;
-    canvas
-      ..save()
-      ..translate(50, 60)
-      ..scale(_rigScale)
-      ..translate(-50, -60)
-      ..translate(50, 50)
-      ..scale(s)
-      ..translate(-50, -50);
-    final limbs = Path()
-      ..addPath(_polyline([j.sh, j.eB, j.hB]), Offset.zero)
-      ..addPath(_polyline([j.hip, j.kB, j.fB]), Offset.zero)
-      ..addPath(_polyline([j.hip, j.neck]), Offset.zero)
-      ..addPath(_polyline([j.hip, j.kF, j.fF]), Offset.zero)
-      ..addPath(_polyline([j.sh, j.eA, j.hA]), Offset.zero);
-    canvas
-      ..drawPath(limbs, _stroke(ink, 6.5))
-      ..drawCircle(j.head, 6.2, Paint()..color = ink);
-    final bc = _dir(j.hip, v[2], 3), knot = _dir(bc, v[2] + 90, 3.8);
-    final belt = pose.belt(colors.isDark ? _beltsDark : _beltsLight).withValues(alpha: a);
-    canvas
-      ..drawLine(_dir(bc, v[2] - 90, 5.5), _dir(bc, v[2] + 90, 5.5), _stroke(belt, 3))
-      ..drawLine(knot, _dir(knot, 70, 7), _stroke(belt, 2.2))
-      ..drawLine(knot, _dir(knot, 98, 6.5), _stroke(belt, 2.2));
-    _hit(canvas, t, 780, _punchHand, 0);
-    _hit(canvas, t, 1360, _kickFoot, -45);
-    canvas.restore();
-  }
-
-  /// Three short impact marks that burst out from a punch or kick.
-  void _hit(Canvas canvas, double t, double at, Offset p, double aim) {
-    if (t < at || t >= at + 180) return;
-    final pr = (t - at) / 180, q = Curves.easeOutCubic.transform(pr);
-    final paint = _stroke(colors.primary.withValues(alpha: 1 - pr), 2.4);
-    for (final d in const [-35.0, 0, 35]) {
-      canvas.drawLine(_dir(p, aim + d, 4 + 6 * q), _dir(p, aim + d, 6 + 11 * q), paint);
-    }
-  }
-
+  /// Once the word has formed, the slash sends out a ring that settles on the badge.
   void _ring(Canvas canvas, double t) {
-    if (t >= 1040 && t < kIntroMorphAt) {
-      final n = math.max(2, (120 * _clamp01((t - 1040) / 320)).round() + 1);
-      canvas.drawPath(_polyline(_kickTrail.sublist(0, n)), _stroke(colors.primary, 3));
-    } else if (t >= kIntroWordAt) {
-      final e = Curves.easeOutCubic.transform(_clamp01((t - kIntroWordAt) / (kIntroRevealAt - kIntroWordAt)));
-      final fade = 1 - _clamp01((t - kIntroRevealAt - 250) / 200);
-      if (fade <= 0) return;
-      canvas.drawCircle(Offset.lerp(_slashAt, const Offset(50, 50), e)!, _lerp(3, _ringR, e),
-          _stroke(colors.primary.withValues(alpha: fade), 3 - .4 * _clamp01((t - kIntroWordAt) / 360)));
-    }
+    if (t < kIntroWordAt) return;
+    final e = Curves.easeOutCubic.transform(_clamp01((t - kIntroWordAt) / (kIntroRevealAt - kIntroWordAt)));
+    final fade = 1 - _clamp01((t - kIntroRevealAt - 250) / 200);
+    if (fade <= 0) return;
+    canvas.drawCircle(Offset.lerp(_slashAt, _ringCentre, e)!, _lerp(3, _ringR, e),
+        _stroke(colors.primary.withValues(alpha: fade), 3 - .4 * _clamp01((t - kIntroWordAt) / 360)));
   }
 
   void _word(Canvas canvas, double t, Offset Function(Offset) px, double u, double glide, double fade) {
-    if (t < kIntroMorphAt) return;
     final slide = _wordSlide * Curves.easeInOutCubic.transform(_clamp01((t - kIntroWordAt) / 360));
     final bounce = 1 + .05 * math.sin(math.pi * _clamp01((t - kIntroWordAt) / 220));
     canvas.save();
@@ -581,13 +489,10 @@ class IntroPainter extends CustomPainter {
       ..scale(bounce)
       ..translate(-50, -52);
     for (final s in wordStrokes) {
-      final e = Curves.easeInOutCubic.transform(_clamp01((t - kIntroMorphAt - s.delay) / 380));
-      final color = switch (s.ink) {
-        StrokeInk.slash => colors.primary,
-        StrokeInk.belt => Color.lerp(colors.isDark ? _beltsDark[4] : _beltsLight[4], colors.textPrimary, e)!,
-        StrokeInk.ink => colors.textPrimary,
-      };
-      canvas.drawPath(_polyline(s.at(e)), _stroke(color, _lerp(s.w0, s.w1, e)));
+      final st = s.at(t);
+      if (st == null) continue;
+      final ink = s.ink == StrokeInk.slash ? colors.primary : Color.lerp(colors.primary, colors.textPrimary, st.e)!;
+      canvas.drawPath(_polyline(st.pts), _stroke(ink, st.width));
     }
     final a = _clamp01((t - kIntroWordAt - 60) / 300) * fade;
     if (a > 0) {
