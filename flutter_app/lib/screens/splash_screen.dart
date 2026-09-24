@@ -8,18 +8,18 @@ import 'package:go_router/go_router.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 
-// Launch intro ("ring unfurl"). The badge's orange ring draws itself and pulses once, then
-// splits into eight arcs that straighten into the D/CLIX wordmark. The slash sends out a
-// ring that bursts into the badge above the word, ripples run while the session
-// restores, and the badge and word glide into the Login header (or the stage zooms away
-// into Home when a saved session was restored).
+// Launch intro ("dot bloom"). One orange dot pops in the centre and splits into eight, one
+// per stroke of the D/CLIX wordmark; each flies to its place and springs open into its
+// stroke. The slash then sends out a ring that bursts into the badge above the word,
+// ripples run while the session restores, and the badge and word glide into the Login
+// header (or the stage zooms away into Home when a saved session was restored).
 //
 // Everything is drawn in a 100x100 "stage" square, the same units as the approved HTML
 // preview, so timings and shapes carry over one to one.
 
 // Timeline, in milliseconds from the first frame.
-const double kIntroRingDrawnAt = 380; // the ring has drawn itself; it pulses once
-const double kIntroUnfurlAt = 480; // the arcs start straightening into letters
+const double kIntroSplitAt = 220; // the first dot splits and the eight fly apart
+const double kIntroGrowAt = 520; // the dots start springing open into strokes
 const double kIntroWordAt = 1220; // the word has formed
 const double kIntroRevealAt = 1580; // the badge bursts open above the word
 const double kIntroExitMin = 2180; // earliest moment the splash may leave
@@ -35,48 +35,31 @@ const Offset _ringCentre = Offset(50, 50);
 const int _m = 60; // points per stroke
 
 // ---------------------------------------------------------------------------------------
-// The word. Eight monoline strokes, each grown out of its own arc of the ring.
+// The word. Eight monoline strokes, each blooming out of one of the eight dots.
 
 enum StrokeInk { ink, slash }
 
+const Offset _dotFrom = Offset(50, 52); // where the first dot pops, and the eight split
+const double _strokeW = 5.5 * _wordScale;
+
 class WordStroke {
-  WordStroke(this.to, this.a0, this.a1, this.flip, this.delay, this.ink);
+  WordStroke(this.to, this.mid, this.delay, this.ink);
 
-  /// The finished glyph stroke, in stage units.
+  /// The finished glyph stroke, in stage units, and the point it blooms from.
   final List<Offset> to;
-
-  /// This stroke's arc of the ring, in degrees (0 = right, 90 = down), and whether the
-  /// arc runs against the glyph's direction.
-  final double a0, a1;
-  final bool flip;
+  final Offset mid;
   final double delay;
   final StrokeInk ink;
 
-  /// The stroke at time [t], or null while the ring has not drawn this arc yet.
+  /// The stroke at time [t], or null while the first dot has not split yet. Until it
+  /// opens the points sit on top of each other, which draws as a round dot.
   ({List<Offset> pts, double e, double width})? at(double t) {
-    final drawn = 180 + 360 * Curves.easeInOutCubic.transform(_clamp01(t / kIntroRingDrawnAt));
-    if (drawn <= a0) return null;
-    var arc = _arc(a0, math.min(a1, drawn));
-    if (flip) arc = arc.reversed.toList();
-    final e = Curves.easeInOutCubic.transform(_clamp01((t - kIntroUnfurlAt - delay) / 460));
-    final pulse = t >= kIntroRingDrawnAt && t < kIntroUnfurlAt + 20
-        ? math.sin(math.pi * (t - kIntroRingDrawnAt) / 120).clamp(0.0, 1.0)
-        : 0.0;
-    return (
-      pts: [for (var i = 0; i < _m; i++) Offset.lerp(arc[i], to[i], e)!],
-      e: e,
-      width: _lerp(3 + pulse, 5.5 * _wordScale, e),
-    );
+    if (t < kIntroSplitAt) return null;
+    final fly = Curves.easeOutCubic.transform(_clamp01((t - kIntroSplitAt) / 300));
+    final from = Offset.lerp(_dotFrom, mid, fly)!;
+    final e = Curves.easeOutBack.transform(_clamp01((t - kIntroGrowAt - delay) / 420));
+    return (pts: [for (final p in to) from + (p - mid) * e], e: e, width: _strokeW);
   }
-}
-
-List<Offset> _arc(double a0, double a1) => [
-      for (var i = 0; i < _m; i++) _dir(_ringCentre, a0 + (a1 - a0) * i / (_m - 1), _ringR),
-    ];
-
-Offset _dir(Offset p, double deg, double r) {
-  final a = deg * math.pi / 180;
-  return p + Offset(math.cos(a) * r, math.sin(a) * r);
 }
 
 Offset _w(Offset p) => Offset(50 + (p.dx - 50) * _wordScale, 52 + (p.dy - 52) * _wordScale);
@@ -94,24 +77,12 @@ List<Offset> _sample(Path p) {
   return [for (var i = 0; i < _m; i++) m.getTangentForOffset(m.length * i / (_m - 1))!.position];
 }
 
-double _length(List<Offset> pts) {
-  var d = 0.0;
-  for (var i = 1; i < pts.length; i++) {
-    d += (pts[i] - pts[i - 1]).distance;
-  }
-  return d;
+Offset _centre(List<Offset> pts) {
+  final box = pts.skip(1).fold(Rect.fromPoints(pts.first, pts.first), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
+  return box.center;
 }
 
-double _gap(List<Offset> a, List<Offset> b) {
-  var d = 0.0;
-  for (var i = 0; i < a.length; i++) {
-    d += (a[i] - b[i]).distance;
-  }
-  return d;
-}
-
-/// The eight strokes of D/CLIX, left to right, each owning a share of the ring
-/// proportional to its length, starting from the ring's left side and going clockwise.
+/// The eight strokes of D/CLIX, left to right, each blooming from its own dot.
 final List<WordStroke> wordStrokes = () {
   final dBowl = Path()
     ..moveTo(-2, 41)
@@ -131,18 +102,13 @@ final List<WordStroke> wordStrokes = () {
     (_polyline(const [Offset(85, 41), Offset(101, 63)]), StrokeInk.ink), // X
     (_polyline(const [Offset(101, 41), Offset(85, 63)]), StrokeInk.ink), // X
   ];
-  final targets = [for (final g in glyphs) _sample(g.$1).map(_w).toList()];
-  final lengths = targets.map(_length).toList();
-  final total = lengths.reduce((a, b) => a + b);
-  final strokes = <WordStroke>[];
-  var a = 180.0;
-  for (var i = 0; i < glyphs.length; i++) {
-    final a0 = a, a1 = a + 360 * lengths[i] / total, arc = _arc(a0, a1);
-    a = a1;
-    final flip = _gap(arc.reversed.toList(), targets[i]) < _gap(arc, targets[i]);
-    strokes.add(WordStroke(targets[i], a0, a1, flip, i * 40.0, glyphs[i].$2));
-  }
-  return strokes;
+  return [
+    for (var i = 0; i < glyphs.length; i++)
+      () {
+        final to = _sample(glyphs[i].$1).map(_w).toList();
+        return WordStroke(to, _centre(to), i * 40.0, glyphs[i].$2);
+      }(),
+  ];
 }();
 
 /// The finished word in stage units, after it has moved down under the badge.
@@ -488,11 +454,23 @@ class IntroPainter extends CustomPainter {
       ..translate(50, 52)
       ..scale(bounce)
       ..translate(-50, -52);
+    // the first dot, before it splits into one per stroke
+    if (t < kIntroSplitAt) {
+      canvas.drawCircle(_dotFrom, _strokeW / 2 * Curves.easeOutBack.transform(_clamp01(t / 200)),
+          Paint()..color = colors.primary);
+    }
     for (final s in wordStrokes) {
       final st = s.at(t);
       if (st == null) continue;
-      final ink = s.ink == StrokeInk.slash ? colors.primary : Color.lerp(colors.primary, colors.textPrimary, st.e)!;
-      canvas.drawPath(_polyline(st.pts), _stroke(ink, st.width));
+      // the dots take the word's ink as they fly apart; the slash keeps the brand orange
+      final ink = s.ink == StrokeInk.slash
+          ? colors.primary
+          : Color.lerp(colors.primary, colors.textPrimary, _clamp01((t - kIntroSplitAt) / 150))!;
+      if (st.e <= 0) {
+        canvas.drawCircle(st.pts.first, st.width / 2, Paint()..color = ink);
+      } else {
+        canvas.drawPath(_polyline(st.pts), _stroke(ink, st.width));
+      }
     }
     final a = _clamp01((t - kIntroWordAt - 60) / 300) * fade;
     if (a > 0) {

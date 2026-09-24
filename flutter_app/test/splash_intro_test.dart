@@ -1,4 +1,4 @@
-// The launch intro: orange ring -> D/CLIX word -> badge -> glide into Login.
+// The launch intro: a dot blooms into the D/CLIX word -> badge -> glide into Login.
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -35,15 +35,13 @@ Future<void> _advance(WidgetTester tester, int ms) async {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('the ring draws itself, then each arc straightens into its glyph', () {
+  test('each stroke blooms from its dot and ends on its glyph', () {
     expect(wordStrokes, hasLength(8));
-    expect(wordStrokes.first.a0, 180, reason: 'the ring starts on its left side');
-    expect(wordStrokes.last.a1, closeTo(540, 1e-9), reason: 'the eight arcs make one full ring');
     for (final s in wordStrokes) {
-      expect(s.at(0), isNull, reason: 'nothing shows before the ring starts drawing');
-      for (final p in s.at(kIntroRingDrawnAt)!.pts) {
-        expect((p - const Offset(50, 50)).distance, closeTo(39.5, 1e-6));
-      }
+      expect(s.at(0), isNull, reason: 'only the first dot shows before the split');
+      final dot = s.at(kIntroSplitAt)!;
+      expect(dot.pts.toSet(), hasLength(1), reason: 'it starts as a dot');
+      expect(dot.pts.first, const Offset(50, 52), reason: 'and starts where the first dot popped');
       expect(s.at(kIntroWordAt)!.pts, s.to);
       expect(s.to.every((p) => p.dx.isFinite && p.dy.isFinite), isTrue);
     }
