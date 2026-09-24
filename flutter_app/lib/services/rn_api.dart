@@ -72,7 +72,7 @@ class RnApi {
   static Future<List<Map<String, dynamic>>> activityReport(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/Activity', body));
   static Future<List<Map<String, dynamic>>> contributionReport(Map<String, dynamic> body) async =>
-      _rows(await _report('/Reports/Contribution', body));
+      _rows(await _report('/Reports/Contribution', numericReportType(body)));
   static Future<List<Map<String, dynamic>>> reportTrainingCenters() async =>
       _rows(await Api.reportsTrainingCenters());
   static Future<List<Map<String, dynamic>>> reportExamCenters() async => _rows(await Api.reportsExamCenters());

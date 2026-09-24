@@ -196,6 +196,30 @@ String? _photoOf(Map s) {
       : 'https://www.maclubsystem.com/${raw.replaceFirst(RegExp(r'^/+'), '')}';
 }
 
+/// Roster row avatar: the student's photo when the row carries one, else tinted initials.
+Widget _studentAvatar(Map s, {double size = 48}) {
+  final photo = _photoOf(s);
+  final tint = _tintFor(s['id']);
+  final initials = Text(initialsOf('${s['text'] ?? ''}'),
+      style: TextStyle(fontSize: size / 3, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: tint));
+  return Container(
+    width: size,
+    height: size,
+    clipBehavior: Clip.antiAlias,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: tint.hexA('22')),
+    child: photo == null
+        ? initials
+        : CachedNetworkImage(
+            imageUrl: photo,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => initials,
+            errorWidget: (_, __, ___) => initials),
+  );
+}
+
 class RStudentListScreen extends StatefulWidget {
   const RStudentListScreen({super.key});
   @override
@@ -348,21 +372,9 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (_, idx) {
           final s = all[idx];
-          final photo = _photoOf(s);
-          final tint = _tintFor(s['id']);
           return RkCard(
             child: Row(children: [
-              Container(
-                width: 48,
-                height: 48,
-                clipBehavior: Clip.antiAlias,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: photo != null ? c.surfaceAlt : tint.hexA('22')),
-                child: photo != null
-                    ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover, errorWidget: (_, __, ___) => const SizedBox())
-                    : Text(initialsOf('${s['text'] ?? ''}'),
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: tint)),
-              ),
+              _studentAvatar(s),
               const SizedBox(width: Gaps.md),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -730,14 +742,7 @@ class _CentreRosterPageState extends State<CentreRosterPage> with UseApi<CentreR
                       padding: const EdgeInsets.only(bottom: 8),
                       child: RkCard(
                         child: Row(children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: _tintFor(s['id']).hexA('22')),
-                            child: Text(initialsOf('${s['text'] ?? ''}'),
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _tintFor(s['id']))),
-                          ),
+                          _studentAvatar(s, size: 42),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1339,13 +1344,18 @@ class RContributionScreen extends StatefulWidget {
 }
 
 class _RContributionScreenState extends State<RContributionScreen> with UseApi<RContributionScreen> {
-  static const _types = <RkOption>[(id: 'HQ', text: 'Contribution Paid to HQ'), (id: 'BRANCH', text: 'Received from Branches')];
   DateTime _from = _monthStart();
   DateTime _to = _today();
-  String _type = 'HQ';
   bool _searched = false;
+  // /Reports/Contribution casts reportType to an int server-side (same quirk as
+  // /Reports/Reimbursement and /Reports/TournamentSummary — see docs/ARCHITECTURE.md,
+  // "Report-route quirks"): a word like 'HQ'/'BRANCH' 400s, so RnApi.contributionReport strips
+  // it to null and the server returns every contribution row, undifferentiated. Unlike
+  // RReimbursementScreen's status filter, we have no live sample of a Contribution row to know
+  // which field (if any) would let us split HQ vs Branch client-side, so the Type filter below
+  // is shown disabled rather than pretending to work.
   late final _report = useApi<List<Row_>>(
-      () => RnApi.contributionReport({'fromDate': toISODate(_from), 'toDate': toISODate(_to), 'reportType': _type}),
+      () => RnApi.contributionReport({'fromDate': toISODate(_from), 'toDate': toISODate(_to), 'reportType': null}),
       autoRun: false);
 
   @override
@@ -1371,7 +1381,14 @@ class _RContributionScreenState extends State<RContributionScreen> with UseApi<R
             const SizedBox(width: 10),
             Expanded(child: DateField(label: 'To', value: _to, onChange: (d) => setState(() => _to = d))),
           ]),
-          SelectField(label: 'Type', placeholder: 'Select type', value: _type, options: _types, onChange: (id, _) => setState(() => _type = '$id')),
+          SelectField(
+            label: 'Type',
+            placeholder: 'Not available from server',
+            value: null,
+            options: const [],
+            disabled: true,
+            onChange: (_, __) {},
+          ),
         ],
         renderItem: (r, _) {
           final date = r['date'] ?? r['invoiceDate'];
