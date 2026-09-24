@@ -39,7 +39,14 @@ class BcpgWebViewScreen extends StatefulWidget {
     if (!['http', 'https'].contains(uri.scheme) ||
         !allowedHosts.contains(uri.host)) return false;
     final path = uri.path.toLowerCase().replaceFirst(RegExp(r'/+$'), '');
-    return path == '/bcpg/redirect' || path == '/${legacyPath.toLowerCase()}';
+    // `/Payment/Completed/{status}` and `/Payment/Finalizing` are where the invoice gateway
+    // lands the browser; `/Bcpg/Redirect` is the purchase route's equivalent. Without the
+    // Payment pages the WebView would sit on the finished page and never verify the payment.
+    return path == '/bcpg/redirect' ||
+        path == '/payment/finalizing' ||
+        path == '/payment/completed' ||
+        path.startsWith('/payment/completed/') ||
+        path == '/${legacyPath.toLowerCase()}';
   }
 
   @override

@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'response_utils.dart';
 import 'api_changes.dart';
 
@@ -27,9 +29,45 @@ class ApiService {
   /// stopgap, not the destination.
   static const String boostBaseUrl = 'https://apimacuat.zyncbook.com';
 
-  /// The Boost host currently serves a self-signed Plesk certificate, which phones reject.
-  /// Surfaced in the error message so a failure reads as a server problem, not a user one.
-  static const bool boostHostSelfSigned = true;
+  /// The certificate [boostBaseUrl] serves: self-signed by Plesk, CN=Plesk, no SAN for the host.
+  ///
+  /// Every phone rejects it. Android's network_security_config trusts it, but Dart's HttpClient
+  /// never reads that file, so without this pin every `/Bcpg` call died in the TLS handshake and
+  /// the payment gateway never opened. Same bytes as android/app/src/main/res/raw/uat_apimacuat.pem.
+  /// Expires 2027-04-17. Delete with [boostBaseUrl] once UAT has a real certificate.
+  static const String boostCertPem = '''
+-----BEGIN CERTIFICATE-----
+MIIEDzCCAvegAwIBAgIEAVNjujANBgkqhkiG9w0BAQsFADBjMQswCQYDVQQGEwJD
+SDEVMBMGA1UEBwwMU2NoYWZmaGF1c2VuMQ4wDAYDVQQKDAVQbGVzazEOMAwGA1UE
+AwwFUGxlc2sxHTAbBgkqhkiG9w0BCQEWDmluZm9AcGxlc2suY29tMB4XDTI2MDQx
+NzE2MjUxOFoXDTI3MDQxNzE2MjUxOFowYzELMAkGA1UEBhMCQ0gxFTATBgNVBAcM
+DFNjaGFmZmhhdXNlbjEOMAwGA1UECgwFUGxlc2sxDjAMBgNVBAMMBVBsZXNrMR0w
+GwYJKoZIhvcNAQkBFg5pbmZvQHBsZXNrLmNvbTCCASIwDQYJKoZIhvcNAQEBBQAD
+ggEPADCCAQoCggEBANfDl+njfCOibSMMMJAzunsuH23TpxGJmbAevuSIqy0scSiq
+WbXopSwGNqixmFPwE9FEW/X8WD8N1eBOTAxot6hpwiMu8MUtChIf/rOH38nApBeF
+NNd4m3DyyyVMbHbJKkFIZrhnIT8z7IhTn5nPem5BSWyzc4XjXzjCQCoQJdvYrHRs
+5fQjtSKzEj0oWBKGnxyaSEGrsc9H9+pTWkKi4Jefz6Xi/jEL3zNSj3jq+bTRCmP1
+RhwYqz8/5Ri5R/A6yI46ZVGEVwbMTNjxtQJyoGKIG0ue61LaxjNU0B6KsH8+wx3w
+02O87Wjs+TbVsKHiNJpN3nBVU9xya4BBzpJvkU8CAwEAAaOByjCBxzATBgNVHSUE
+DDAKBggrBgEFBQcDATAdBgNVHQ4EFgQUZc+72LB+wwvQA/53UYoyxLwruwkwgZAG
+A1UdIwSBiDCBhYAUZc+72LB+wwvQA/53UYoyxLwruwmhZ6RlMGMxCzAJBgNVBAYT
+AkNIMRUwEwYDVQQHDAxTY2hhZmZoYXVzZW4xDjAMBgNVBAoMBVBsZXNrMQ4wDAYD
+VQQDDAVQbGVzazEdMBsGCSqGSIb3DQEJARYOaW5mb0BwbGVzay5jb22CBAFTY7ow
+DQYJKoZIhvcNAQELBQADggEBAIb6Monx0Gn8oVGjubCFSgmImQIKMCGpKzpCPLd4
+gNhuWuwmjqKHFu5MlyG6ZbDzWV2FfnyKA+Pg+Y8mfNI78WB5dhwEDDx5fpOk6vaD
+qLUWNBxgS+S54RdEuDXmjswDgPsQHc5IQKnbFzqAB/LZ5Vjm+oZvp1lZ7Q5oPofO
+4IuMvCYmu1/r6VDHaSPChw9w3GY1+OS2OKc6xv3oNmFQF2Jj7+59XYQgcoGUWj8W
+02OSxJR7v6vHCC5lyoLp/WxpD/2n1ztmI0qlIps3w7vs3kQod4nL/yezBhpNGGov
+oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
+-----END CERTIFICATE-----
+''';
+
+  /// Accept a certificate the platform rejected only when it is exactly [boostCertPem] on the
+  /// Boost host. Everything else keeps normal verification.
+  static bool trustsBadCertificate(String host, String pem) {
+    String body(String s) => s.replaceAll(RegExp(r'-----[A-Z ]+-----|\s'), '');
+    return host == Uri.parse(boostBaseUrl).host && body(pem) == body(boostCertPem);
+  }
 
   static bool isBoostPath(String endpoint) => endpoint.startsWith('/Bcpg');
 
@@ -39,8 +77,12 @@ class ApiService {
   static const String webApiProxy = String.fromEnvironment('WEB_API_PROXY');
 
   /// Base URL for a given endpoint — Boost routes may live on a different host.
-  static String baseUrlFor(String endpoint) {
-    final boost = isBoostPath(endpoint);
+  ///
+  /// [onBoostHost] forces the Boost host for a route that also exists on production:
+  /// `/Outstanding/PayInvoices` pays invoices through the Boost gateway, and only the UAT
+  /// deployment is wired to it.
+  static String baseUrlFor(String endpoint, {bool onBoostHost = false}) {
+    final boost = onBoostHost || isBoostPath(endpoint);
     if (kIsWeb && webApiProxy.isNotEmpty) {
       return '$webApiProxy/@${boost ? 'uat' : 'prod'}';
     }
@@ -55,7 +97,9 @@ class ApiService {
   /// wrong, and it was: requests arrived and responses silently never came back.
   ///
   /// Defaults to a real client, so production behaviour is unchanged.
-  static http.Client client = http.Client();
+  static http.Client client = kIsWeb
+      ? http.Client()
+      : IOClient(HttpClient()..badCertificateCallback = (cert, host, _) => trustsBadCertificate(host, cert.pem));
 
   static String? _token;
   static int sessionEpoch = 0;
@@ -272,8 +316,9 @@ class ApiService {
     String fileField = 'files',
     Map<String, List<String>> repeatedFields = const {},
     List<({String name, Uint8List bytes})> uploads = const [],
+    bool onBoostHost = false,
   }) async {
-    final url = Uri.parse('${baseUrlFor(endpoint)}$endpoint');
+    final url = Uri.parse('${baseUrlFor(endpoint, onBoostHost: onBoostHost)}$endpoint');
     _log('📤 POST(multipart): $url');
     final req = http.MultipartRequest('POST', url);
     if (_token != null) req.headers['Authorization'] = 'Bearer $_token';
@@ -323,16 +368,22 @@ class ApiService {
       final body = jsonDecode(response.body);
       final error = apiEnvelopeError(body);
       if (error != null) {
+        // Users see a sanitised message; a developer needs the server's own words to tell a
+        // rejected request from a backend crash. Debug builds only — release must not log bodies.
+        _log('📥 Rejected: ${response.body}');
         throw ApiException(apiEnvelopeErrorCode(body) ?? 400, error);
       }
       return body;
     } else if (response.statusCode == 401) {
+      _log('📥 Rejected (${response.statusCode}): ${response.body}');
       throw const ApiException(
           401, 'Your session has expired. Please log in again.');
     } else if (response.statusCode == 404) {
+      _log('📥 Rejected (${response.statusCode}): ${response.body}');
       throw const ApiException(
           404, 'This feature is not available on the server yet.');
     } else {
+      _log('📥 Rejected (${response.statusCode}): ${response.body}');
       throw ApiException(
           response.statusCode,
           response.statusCode >= 500

@@ -141,14 +141,29 @@ class BoostPayment {
       );
     }
 
-    final res = await ApiService.post('/Bcpg/PayInvoices', {
-      'invoiceIds': invoiceIds,
-      'payTermPayments': term?.toJson(),
-      'purchaseItems':
-          purchases.isEmpty ? null : purchases.map((p) => p.toJson()).toList(),
-    });
+    // Invoices are paid through the route the backend actually serves for them. `/Bcpg/PayInvoices`
+    // rejects any body carrying invoice ids ("The JSON value could not be converted to
+    // System.String. Path: $.status") and never returns a URL, so dues showed "Payment failed".
+    // `/Outstanding/PayInvoices` with PaymentMethod=2 (FPX) answers with the checkout URL in
+    // `data` — the flow the previous app used and the backend team verified. Advance months and
+    // purchases keep the /Bcpg route: purchases work there, and it is the only route that bills
+    // months with no invoice yet.
+    final res = term == null && purchases.isEmpty
+        ? await ApiService.postMultipart(
+            '/Outstanding/PayInvoices',
+            {'PaymentMethod': '2'},
+            repeatedFields: {'InvoiceIds': invoiceIds.map((id) => '$id').toList()},
+            onBoostHost: true,
+          )
+        : await ApiService.post('/Bcpg/PayInvoices', {
+            'invoiceIds': invoiceIds,
+            'payTermPayments': term?.toJson(),
+            'purchaseItems': purchases.isEmpty
+                ? null
+                : purchases.map((p) => p.toJson()).toList(),
+          });
 
-    final url = _urlFrom(res);
+    final url = urlFrom(res);
     if (url == null || url.isEmpty) {
       throw const BoostPaymentException(
           'No payment link was returned by the Boost gateway.');
@@ -156,7 +171,8 @@ class BoostPayment {
     return PaymentStart(url: url, referenceId: extractReferenceId(url));
   }
 
-  static String? _urlFrom(dynamic res) {
+  /// The checkout URL in a `/Bcpg` reply, whichever key the server used.
+  static String? urlFrom(dynamic res) {
     final data = unwrapData(res);
     if (data is String && data.trim().isNotEmpty) return data.trim();
     if (data is Map) {
