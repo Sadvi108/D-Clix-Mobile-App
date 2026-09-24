@@ -44,7 +44,7 @@ class _InstructorAttendanceScreenState extends State<InstructorAttendanceScreen>
 
   late final _manual = useApi<bool>(ManualAttendance.isAvailable);
 
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
+  late final _centers = useApi(RnApi.trainingCentres);
   late final _times = useApi<List<Map<String, dynamic>>>(
       () async => _centerId == null
           ? const <Map<String, dynamic>>[]

@@ -94,6 +94,29 @@ class RnApi {
   static Future<List<Map<String, dynamic>>> instructors() async => _rows(await Api.listingInstructors());
   static Future<List<Map<String, dynamic>>> dropdownListByType(Object typeId) async =>
       _rows(await Api.listingDropdownListByType(typeId));
+
+  /// The instructor's training centres as `{id, text}` rows — the one source every centre
+  /// picker and centre fan-out reads.
+  ///
+  /// `/Listing/DropdownListByType/3` is what RN used, but routes in that family can answer with
+  /// `data` omitted entirely (ARCHITECTURE.md records type 6 doing exactly that), and an empty
+  /// answer left every instructor report with a dead "Training Center" picker — which also locks
+  /// the Attendance report's Training Time and Student selects, since both unlock off the centre
+  /// (manual QA 2026-09-24). `/Listing/TrainingCenters` answers the same question and is what
+  /// `student_list_fetch.dart` already trusts, so fall back to it. The two routes disagree on key
+  /// spelling, hence [_centreRows].
+  static Future<List<Map<String, dynamic>>> trainingCentres() async {
+    final primary = _centreRows(await Api.listingDropdownListByType(3));
+    return primary.isNotEmpty ? primary : _centreRows(await Api.listingTrainingCenters());
+  }
+
+  /// `id` keeps its original type — callers compare it as both a number and a string.
+  static List<Map<String, dynamic>> _centreRows(dynamic resp) => [
+        for (final r in findRecordList(resp).whereType<Map>())
+          if ((r['id'] ?? r['centerId'] ?? r['tCenterId'] ?? r['value']) case final id?
+              when '$id'.trim().isNotEmpty)
+            {'id': id, 'text': pickField(r, ['text', 'name', 'centerName', 'tCenterName'])},
+      ];
   static Future<List<Map<String, dynamic>>> studentListByTcId(int tCenterId) async =>
       _rows(await Api.listingStudentListByTcId(tCenterId));
   static Future<List<Map<String, dynamic>>> trainingTimeByTcId(int tCenterId) async =>

@@ -239,7 +239,7 @@ class _RStudentListScreenState extends State<RStudentListScreen> with UseApi<RSt
   // The centre list is part of the same load: waiting on a separate centres request left the
   // screen spinning forever when that request failed.
   late final _students = useApi<List<Row_>>(() async {
-    final list = await RnApi.dropdownListByType(3);
+    final list = await RnApi.trainingCentres();
     final failed = <String>[];
     final perCenter = await Future.wait(list.map((c) async {
       try {
@@ -455,7 +455,7 @@ class _RTrainingScheduleScreenState extends State<RTrainingScheduleScreen> with 
   List<String> _failed = const [];
 
   late final _schedule = useApi<List<ScheduleSlot>>(() async {
-    final centres = await RnApi.dropdownListByType(3);
+    final centres = await RnApi.trainingCentres();
     final failed = <String>[];
     final perCentre = await Future.wait(centres.map((c) async {
       try {
@@ -953,7 +953,7 @@ class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAtte
   DateTime _from = _monthStart();
   DateTime _to = _today();
 
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
+  late final _centers = useApi(RnApi.trainingCentres);
   late final _times = useApi<List<Row_>>(
       () async => _centerId == null ? const <Row_>[] : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
       autoRun: false);
@@ -1074,7 +1074,7 @@ class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceipts
   Object? _centerId;
   bool _searched = false;
 
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
+  late final _centers = useApi(RnApi.trainingCentres);
   late final _report = useApi<List<Row_>>(
       () => RnApi.receipts({
             'tCenterId': _centerId == null ? null : RnApi.number(_centerId).toInt(),
@@ -1144,7 +1144,7 @@ class RPurchaseRequestsScreen extends StatefulWidget {
 class _RPurchaseRequestsScreenState extends State<RPurchaseRequestsScreen> with UseApi<RPurchaseRequestsScreen> {
   Object? _centerId;
   Object _status = 'Pending';
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
+  late final _centers = useApi(RnApi.trainingCentres);
   late final _rows = useApi<List<Row_>>(
       () => RnApi.purchaseRequests({
             'tCenterId': _centerId == null ? null : RnApi.number(_centerId).toInt(),
@@ -1212,7 +1212,7 @@ class RPaymentSlipsScreen extends StatefulWidget {
 class _RPaymentSlipsScreenState extends State<RPaymentSlipsScreen> with UseApi<RPaymentSlipsScreen> {
   Object? _centerId;
   Object _status = 'Pending';
-  late final _centers = useApi(() => RnApi.dropdownListByType(3));
+  late final _centers = useApi(RnApi.trainingCentres);
   late final _rows = useApi<List<Row_>>(
       () => RnApi.paymentSlips({
             'tCenterId': _centerId == null ? null : RnApi.number(_centerId).toInt(),

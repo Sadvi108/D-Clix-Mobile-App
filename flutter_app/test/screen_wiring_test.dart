@@ -94,7 +94,9 @@ const _expected = <String, List<String>>{
   'qr_scan_screen': ['attendanceAdd'],
   'term_payment_screen': ['listingMySiblings'],
   'instructor_attendance_screen': [
-    'dropdownListByType',
+    // Centres come from RnApi.trainingCentres now — DropdownListByType/3 with a
+    // /Listing/TrainingCenters fallback — not the bare dropdown call.
+    'trainingCentres',
     'trainingTimeByTcId',
     'studentListByTcId',
     'utilitiesQRCodeBytes'
