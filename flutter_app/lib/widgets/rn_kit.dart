@@ -441,6 +441,29 @@ class RnCircleButton extends StatelessWidget {
   }
 }
 
+/// Back chevron for a screen that is also a bottom-tab root (Schedule, Payments, Training):
+/// visible only when pushed as a drill-down (`canPopHere`), so the tab-root header stays
+/// pixel-identical to before. Profile's header has its own icon-button style already, so it
+/// gates the same way inline instead of using this widget.
+class TabRootBackButton extends StatelessWidget {
+  const TabRootBackButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!canPopHere(context)) return const SizedBox.shrink();
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      RnCircleButton(icon: Ion.chevronBack, onPress: () => safeBack(context)),
+      const SizedBox(width: Gaps.md),
+    ]);
+  }
+}
+
+/// `context.canPop()` asserts when there's no GoRouter in the tree at all — true for a handful
+/// of screen tests that mount a screen standalone to check its data wiring, not its navigation.
+/// Those screens are always inside the app's router in the real app; this just keeps a
+/// build-time (not tap-time) canPop check from crashing when one isn't there.
+bool canPopHere(BuildContext context) => GoRouter.maybeOf(context)?.canPop() ?? false;
+
 /// `shadow.soft` card with the dark-mode hairline most RN list cards use.
 BoxDecoration rnCard(AppColors c, {double radius = Radii.lg, List<BoxShadow>? shadow, Color? color}) => BoxDecoration(
       color: color ?? c.surface,

@@ -538,6 +538,7 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           Padding(
             padding: EdgeInsets.fromLTRB(Gaps.xl, top + 14, Gaps.xl, 14),
             child: Row(children: [
+              const TabRootBackButton(),
               Expanded(
                 child: Text('Fees & Payments',
                     style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: c.textPrimary)),

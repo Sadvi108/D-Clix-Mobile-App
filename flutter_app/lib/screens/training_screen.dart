@@ -88,6 +88,7 @@ class _TrainingScreenState extends State<TrainingScreen>
         Padding(
           padding: EdgeInsets.fromLTRB(Gaps.xl, top + 14, Gaps.xl, 14),
           child: Row(children: [
+            const TabRootBackButton(),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('My Training',

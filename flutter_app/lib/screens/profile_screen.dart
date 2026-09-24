@@ -316,6 +316,13 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
         padding: const EdgeInsets.fromLTRB(Gaps.xl, 6, Gaps.xl, 64),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
+            // Reachable both as the Profile tab root (no back wanted) and as a Quick
+            // Access / All Features drill-down push (back wanted) — same gate as
+            // TabRootBackButton, but this header already has its own icon-button style.
+            if (canPopHere(context)) ...[
+              headerButton(Ion.chevronBack, 'Back', () => safeBack(context)),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: Text(isInstructor ? 'Instructor Profile' : 'My Profile',
                   style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),

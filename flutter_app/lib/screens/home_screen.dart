@@ -23,7 +23,7 @@ const List<QuickTile> kStudentQuickCards = [
   (id: 'trainer', label: 'My Trainer', icon: Ion.personCircle, color: Color(0xFF8B5CF6), route: '/training'),
   (id: 'timetable', label: 'Timetable', icon: Ion.calendar, color: Color(0xFF0EA5E9), route: '/schedule'),
   (id: 'fees', label: 'Fees Due', icon: Ion.wallet, color: Color(0xFFEF4444), route: '/payments'),
-  (id: 'payments', label: 'Payment History', icon: Ion.receipt, color: Color(0xFF14B8A6), route: '/payments'),
+  (id: 'payments', label: 'Payment History', icon: Ion.receipt, color: Color(0xFF14B8A6), route: '/payments?tab=history'),
   (id: 'progress', label: 'Progress Report', icon: Ion.trendingUp, color: Color(0xFF6366F1), route: '/progress'),
   (id: 'belt', label: 'Belt / Rank', icon: Ion.ribbon, color: Color(0xFFEAB308), route: '/belt-rank'),
   (id: 'events', label: 'Events', icon: Ion.calendar, color: Color(0xFFF97316), route: '/events'),
@@ -33,17 +33,10 @@ const List<QuickTile> kStudentQuickCards = [
   (id: 'more', label: 'More', icon: Ion.grid, color: Color(0xFF64748B), route: '/more'),
 ];
 
-/// Tab routes live inside the shell and are switched with `go`; everything else is pushed.
-const _tabRoutes = {'/home', '/schedule', '/payments', '/profile', '/training', '/progress'};
-
-void openRoute(BuildContext context, String route) {
-  final path = Uri.parse(route).path;
-  if (_tabRoutes.contains(path)) {
-    context.go(route);
-  } else {
-    context.push(route);
-  }
-}
+/// Quick Access and All Features are drill-downs, never tab switches — always push, so there's
+/// a screen to pop back to. `go` replaces the stack and strands the caller with no back control
+/// (manual QA 2026-09-24, bugs 1 and 2).
+void openRoute(BuildContext context, String route) => context.push(route);
 
 /// Port of `StudentHome` in `frontend/app/(tabs)/home.tsx` (Expo v2.11.1).
 class HomeScreen extends StatefulWidget {
