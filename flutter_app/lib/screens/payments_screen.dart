@@ -186,9 +186,8 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         final start = await _startPayment(payingIds, term);
         if (!mounted) return true;
         Navigator.of(context).pop(); // close the sheet before the gateway opens
-        await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(
-          builder: (_) => BcpgWebViewScreen(paymentUrl: start.url, referenceId: start.referenceId ?? ''),
-        ));
+        await BcpgWebViewScreen.open(context,
+            paymentUrl: start.url, referenceId: start.referenceId ?? '');
         if (!mounted) return false;
         // The browser never says whether the payment went through: verify, then reconcile
         // against every account in this payment, not just the active chip.

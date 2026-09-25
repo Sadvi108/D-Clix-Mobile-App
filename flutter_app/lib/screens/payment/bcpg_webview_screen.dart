@@ -27,6 +27,31 @@ class BcpgWebViewScreen extends StatefulWidget {
     this.returnUrlNeedle = 'bcpg_redirect',
   });
 
+  /// Open the gateway full-screen and hand the caller whatever this screen popped with.
+  ///
+  /// Pushed on the ROOT navigator deliberately. Every payment entry point but /invoices
+  /// sits inside a `ShellRoute`, so a plain `Navigator.of(context).push` lands inside the
+  /// shell — whose `extendBody: true` Scaffold keeps the frosted ClubTabBar painted over
+  /// the bottom of whatever it hosts. That bar covered FPX's own Pay and Cancel buttons,
+  /// so a member already quoted an amount could neither confirm nor abandon the checkout.
+  /// The root navigator puts the gateway above the shell, bar included, for as long as it
+  /// is open; the bar comes back when this screen pops.
+  static Future<Map<String, dynamic>?> open(
+    BuildContext context, {
+    required String paymentUrl,
+    required String referenceId,
+    String returnUrlNeedle = 'bcpg_redirect',
+  }) {
+    return Navigator.of(context, rootNavigator: true)
+        .push<Map<String, dynamic>>(MaterialPageRoute(
+      builder: (_) => BcpgWebViewScreen(
+        paymentUrl: paymentUrl,
+        referenceId: referenceId,
+        returnUrlNeedle: returnUrlNeedle,
+      ),
+    ));
+  }
+
   static bool isMerchantReturn(String? url,
       {String legacyPath = 'bcpg_redirect'}) {
     final uri = Uri.tryParse(url ?? '');
@@ -134,58 +159,63 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
             },
           ),
         ),
-        body: Stack(
-          children: [
-            InAppWebView(
-              initialUrlRequest: URLRequest(url: WebUri(widget.paymentUrl)),
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                javaScriptCanOpenWindowsAutomatically: true,
-                useShouldOverrideUrlLoading: true,
-                supportMultipleWindows: false,
-                // FPX bank pages often use third-party cookies + storage.
-                thirdPartyCookiesEnabled: true,
-                domStorageEnabled: true,
-                clearCache: false,
+        // The gateway draws its Pay / Cancel row at the very bottom of the page, so
+        // the body has to stop above the system navigation inset as well.
+        body: SafeArea(
+          top: false,
+          child: Stack(
+            children: [
+              InAppWebView(
+                initialUrlRequest: URLRequest(url: WebUri(widget.paymentUrl)),
+                initialSettings: InAppWebViewSettings(
+                  javaScriptEnabled: true,
+                  javaScriptCanOpenWindowsAutomatically: true,
+                  useShouldOverrideUrlLoading: true,
+                  supportMultipleWindows: false,
+                  // FPX bank pages often use third-party cookies + storage.
+                  thirdPartyCookiesEnabled: true,
+                  domStorageEnabled: true,
+                  clearCache: false,
+                ),
+                onProgressChanged: (_, p) =>
+                    setState(() => _progress = p / 100.0),
+                shouldOverrideUrlLoading: (controller, action) async {
+                  final url = action.request.url?.toString();
+                  if (_isReturnUrl(url)) {
+                    // Don't actually navigate to the return URL — bounce
+                    // back into the app and verify.
+                    await _handleReturn();
+                    return NavigationActionPolicy.CANCEL;
+                  }
+                  return NavigationActionPolicy.ALLOW;
+                },
+                onLoadStop: (controller, url) async {
+                  if (_isReturnUrl(url?.toString())) {
+                    await _handleReturn();
+                  }
+                },
               ),
-              onProgressChanged: (_, p) =>
-                  setState(() => _progress = p / 100.0),
-              shouldOverrideUrlLoading: (controller, action) async {
-                final url = action.request.url?.toString();
-                if (_isReturnUrl(url)) {
-                  // Don't actually navigate to the return URL — bounce
-                  // back into the app and verify.
-                  await _handleReturn();
-                  return NavigationActionPolicy.CANCEL;
-                }
-                return NavigationActionPolicy.ALLOW;
-              },
-              onLoadStop: (controller, url) async {
-                if (_isReturnUrl(url?.toString())) {
-                  await _handleReturn();
-                }
-              },
-            ),
-            if (_progress > 0 && _progress < 1)
-              LinearProgressIndicator(value: _progress),
-            if (_verifying)
-              Container(
-                color: Colors.black54,
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: Colors.white),
-                      SizedBox(height: 12),
-                      Text('Verifying payment…',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700)),
-                    ],
+              if (_progress > 0 && _progress < 1)
+                LinearProgressIndicator(value: _progress),
+              if (_verifying)
+                Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Colors.white),
+                        SizedBox(height: 12),
+                        Text('Verifying payment…',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

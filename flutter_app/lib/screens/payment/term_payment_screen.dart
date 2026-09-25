@@ -157,9 +157,8 @@ class _TermPaymentScreenState extends State<TermPaymentScreen> {
           term: TermPayment(
               studentIds: ids, year: year, months: selectedMonths)));
       if (!mounted) return;
-      await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => BcpgWebViewScreen(
-              paymentUrl: start.url, referenceId: start.referenceId ?? '')));
+      await BcpgWebViewScreen.open(context,
+          paymentUrl: start.url, referenceId: start.referenceId ?? '');
       final result = await BoostPayment.confirm(referenceId: start.referenceId);
       if (result.outcome != PaymentOutcome.unknown) session.clearPaymentLock();
       if (!mounted) return;

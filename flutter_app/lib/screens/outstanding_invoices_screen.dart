@@ -64,9 +64,8 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
     try {
       final start = await BoostPayment.start(PaymentIntent(invoiceIds: ids));
       if (!mounted) return;
-      await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(
-        builder: (_) => BcpgWebViewScreen(paymentUrl: start.url, referenceId: start.referenceId ?? ''),
-      ));
+      await BcpgWebViewScreen.open(context,
+          paymentUrl: start.url, referenceId: start.referenceId ?? '');
       // The browser never reports the result — verify by reference, then reconcile the list.
       final verdict = await BoostPayment.confirm(
         referenceId: start.referenceId,

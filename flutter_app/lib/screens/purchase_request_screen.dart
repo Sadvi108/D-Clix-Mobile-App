@@ -74,9 +74,8 @@ class _PurchaseRequestScreenState extends State<PurchaseRequestScreen> with UseA
         purchaseItems: [for (final p in selected) buildPurchaseLine(p, _n(p.productId))],
       ));
       if (!mounted) return;
-      await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(
-        builder: (_) => BcpgWebViewScreen(paymentUrl: start.url, referenceId: start.referenceId ?? ''),
-      ));
+      await BcpgWebViewScreen.open(context,
+          paymentUrl: start.url, referenceId: start.referenceId ?? '');
       final verdict = await BoostPayment.confirm(
         referenceId: start.referenceId,
         purchaseBaseline: baseline,
