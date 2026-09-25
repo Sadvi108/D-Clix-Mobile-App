@@ -43,7 +43,7 @@ const Offset _dotFrom = Offset(50, 52); // where the first dot pops, and the eig
 const double _strokeW = 5.5 * _wordScale;
 
 class WordStroke {
-  WordStroke(this.to, this.mid, this.delay, this.ink);
+  WordStroke(this.to, this.mid, this.delay, this.ink, {this.fill});
 
   /// The finished glyph stroke, in stage units, and the point it blooms from.
   final List<Offset> to;
@@ -51,18 +51,31 @@ class WordStroke {
   final double delay;
   final StrokeInk ink;
 
+  /// The flash between D and CLIX is a filled shape, not a stroke: this is its outline,
+  /// and [to] samples the same outline so it blooms and measures like the others.
+  final Path? fill;
+
   /// The stroke at time [t], or null while the first dot has not split yet. Until it
   /// opens the points sit on top of each other, which draws as a round dot.
-  ({List<Offset> pts, double e, double width})? at(double t) {
+  ({List<Offset> pts, double e, double width, Offset from})? at(double t) {
     if (t < kIntroSplitAt) return null;
     final fly = Curves.easeOutCubic.transform(_clamp01((t - kIntroSplitAt) / 300));
     final from = Offset.lerp(_dotFrom, mid, fly)!;
     final e = Curves.easeOutBack.transform(_clamp01((t - kIntroGrowAt - delay) / 420));
-    return (pts: [for (final p in to) from + (p - mid) * e], e: e, width: _strokeW);
+    return (pts: [for (final p in to) from + (p - mid) * e], e: e, width: _strokeW, from: from);
   }
 }
 
 Offset _w(Offset p) => Offset(50 + (p.dx - 50) * _wordScale, 52 + (p.dy - 52) * _wordScale);
+/// The flash that stands between the D and the CLIX in the logo: a bar across the top,
+/// a notch under it, then a tail slanting down to a point just above the baseline. Traced
+/// off the badge artwork, where it is half the cap height and starts 0.43 of the way down.
+/// Centred in the gap between the D bowl's outer edge (17.75) and the C's (29.25), since
+/// the letters here are strokes: their round caps sit 2.75 outside the glyph path.
+const _flashPts = [Offset(19.1, 50.4), Offset(27.9, 50.4), Offset(21.0, 61.7), Offset(22.7, 54.8), Offset(19.1, 54.8)];
+final Path _flash = _polygon(_flashPts);
+
+Path _polygon(List<Offset> pts) => _polyline(pts)..close();
 
 Path _polyline(List<Offset> pts) {
   final p = Path()..moveTo(pts.first.dx, pts.first.dy);
@@ -95,7 +108,7 @@ final List<WordStroke> wordStrokes = () {
   final glyphs = <(Path, StrokeInk)>[
     (_polyline(const [Offset(-2, 41), Offset(-2, 63)]), StrokeInk.ink), // D stem
     (dBowl, StrokeInk.ink), // D bowl
-    (_polyline(const [Offset(22, 58), Offset(28, 46)]), StrokeInk.slash),
+    (_flash, StrokeInk.slash), // the flash between D and CLIX
     (c, StrokeInk.ink),
     (_polyline(const [Offset(58, 41), Offset(58, 63), Offset(70, 63)]), StrokeInk.ink), // L
     (_polyline(const [Offset(78, 41), Offset(78, 63)]), StrokeInk.ink), // I
@@ -106,7 +119,8 @@ final List<WordStroke> wordStrokes = () {
     for (var i = 0; i < glyphs.length; i++)
       () {
         final to = _sample(glyphs[i].$1).map(_w).toList();
-        return WordStroke(to, _centre(to), i * 40.0, glyphs[i].$2);
+        final fill = glyphs[i].$2 == StrokeInk.slash ? _polygon(_flashPts.map(_w).toList()) : null;
+        return WordStroke(to, _centre(to), i * 40.0, glyphs[i].$2, fill: fill);
       }(),
   ];
 }();
@@ -117,7 +131,7 @@ final Rect _wordRest = () {
   final box = pts.skip(1).fold(Rect.fromPoints(pts.first, pts.first), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
   return box.inflate(5.5 * _wordScale / 2).translate(0, _wordSlide);
 }();
-final Offset _slashAt = _w(const Offset(25, 52));
+final Offset _slashAt = wordStrokes.firstWhere((s) => s.ink == StrokeInk.slash).mid;
 
 // ---------------------------------------------------------------------------------------
 // Where the Login header draws its logo and "D-CLIX" (see LoginScreen's top row: page
@@ -468,6 +482,15 @@ class IntroPainter extends CustomPainter {
           : Color.lerp(colors.primary, colors.textPrimary, _clamp01((t - kIntroSplitAt) / 150))!;
       if (st.e <= 0) {
         canvas.drawCircle(st.pts.first, st.width / 2, Paint()..color = ink);
+      } else if (s.fill != null) {
+        // the flash is filled, so it blooms by scaling rather than by moving points
+        canvas
+          ..save()
+          ..translate(st.from.dx, st.from.dy)
+          ..scale(st.e)
+          ..translate(-s.mid.dx, -s.mid.dy)
+          ..drawPath(s.fill!, Paint()..color = ink)
+          ..restore();
       } else {
         canvas.drawPath(_polyline(st.pts), _stroke(ink, st.width));
       }
