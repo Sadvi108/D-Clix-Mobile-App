@@ -301,20 +301,15 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member — this file IS run via
     // `flutter test`; it only lives outside test/ so the suite does not pick it up.
     // ignore: invalid_use_of_visible_for_testing_member
-    SharedPreferences.setMockInitialValues({
-      // Auto Pay captured ON, so the shot shows the real settings rather than a bare
-      // toggle.
-      'dclix.autopay.v1':
-          '{"enabled":true,"dayOfMonth":1,"monthsAhead":1,"payeeIds":[],"lastRemindedMs":null}',
-    });
+    SharedPreferences.setMockInitialValues({});
 
     // flutter_local_notifications has no platform side in a test; unanswered calls leave
-    // the Auto Pay screen on its spinner.
+    // the notification settings screen on its spinner.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('dexterous.com/flutter/local_notifications'),
       // Types matter: the plugin casts these. `initialize` returning null instead of a
-      // bool left NotificationService.init() awaiting forever and Auto Pay captured as a
+      // bool left NotificationService.init() awaiting forever and screens captured as a
       // spinner.
       (call) async => switch (call.method) {
         'initialize' => true,

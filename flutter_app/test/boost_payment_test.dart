@@ -28,6 +28,12 @@ void main() {
       expect(ApiService.isBoostPath('/Reports/BcpgSummary'), isFalse);
       expect(ApiService.isBoostPath('/Bcpg/Callback'), isTrue);
     });
+
+    test('/AutoPay goes to the Boost host too: production does not serve it', () {
+      expect(ApiService.baseUrlFor('/AutoPay/Status'), ApiService.boostBaseUrl);
+      expect(ApiService.baseUrlFor('/AutoPay/Enable'), ApiService.boostBaseUrl);
+      expect(ApiService.isBoostPath('/Reports/AutoPaySummary'), isFalse);
+    });
   });
 
   group('extractReferenceId', () {

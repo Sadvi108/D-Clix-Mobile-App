@@ -69,7 +69,9 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     return host == Uri.parse(boostBaseUrl).host && body(pem) == body(boostCertPem);
   }
 
-  static bool isBoostPath(String endpoint) => endpoint.startsWith('/Bcpg');
+  /// Routes only the UAT deployment serves: the Boost payment routes and Auto Pay's saved card.
+  static bool isBoostPath(String endpoint) =>
+      endpoint.startsWith('/Bcpg/') || endpoint.startsWith('/AutoPay/');
 
   /// Web preview only: the local CORS proxy (port 8082). Browsers cannot call Club.Api
   /// directly — it 401s CORS preflight on authenticated routes. Native builds ignore this.
@@ -320,6 +322,9 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
   }) async {
     final url = Uri.parse('${baseUrlFor(endpoint, onBoostHost: onBoostHost)}$endpoint');
     _log('📤 POST(multipart): $url');
+    // Debug builds only, and never the Authorization header: comparing the app's form parts
+    // against the same call made in Swagger is how a rejected request gets settled.
+    _log('📤 form: ${{...fields, ...repeatedFields}}');
     final req = http.MultipartRequest('POST', url);
     if (_token != null) req.headers['Authorization'] = 'Bearer $_token';
     fields.forEach((k, v) {

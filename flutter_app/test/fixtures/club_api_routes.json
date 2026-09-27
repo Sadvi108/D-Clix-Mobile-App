@@ -17,6 +17,21 @@
  "/Attendance/Add": [
   "POST"
  ],
+ "/AutoPay/Callback": [
+  "POST"
+ ],
+ "/AutoPay/Disable": [
+  "POST"
+ ],
+ "/AutoPay/Enable": [
+  "POST"
+ ],
+ "/AutoPay/Finalizing": [
+  "GET"
+ ],
+ "/AutoPay/Status": [
+  "GET"
+ ],
  "/Bcpg/Callback": [
   "POST"
  ],

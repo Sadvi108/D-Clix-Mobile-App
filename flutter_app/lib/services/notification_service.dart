@@ -3,8 +3,6 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/data/latest_all.dart' as tzdata;
-import 'package:timezone/timezone.dart' as tz;
 
 import 'notification_diff.dart';
 import 'notification_prefs.dart';
@@ -33,32 +31,6 @@ class NotificationService {
   /// Tapping a notification should open the conversation list.
   static void Function(String? payload)? onTap;
 
-  /// The timezone database has to be loaded before anything can be scheduled, and
-  /// zonedSchedule needs a real local location — `tz.local` defaults to UTC, which would
-  /// fire a 09:00 Malaysian reminder at 17:00.
-  static bool _tzReady = false;
-
-  static void _initTimeZones() {
-    if (_tzReady) return;
-    try {
-      tzdata.initializeTimeZones();
-      // Derive the zone from the device's current UTC offset. Malaysia is UTC+8 with no
-      // DST, so a fixed-offset match is accurate here; falling back to UTC would only
-      // shift the reminder, never lose it.
-      final offset = DateTime.now().timeZoneOffset;
-      for (final name in tz.timeZoneDatabase.locations.keys) {
-        final loc = tz.timeZoneDatabase.locations[name]!;
-        if (tz.TZDateTime.now(loc).timeZoneOffset == offset) {
-          tz.setLocalLocation(loc);
-          break;
-        }
-      }
-      _tzReady = true;
-    } catch (e) {
-      debugPrint('timezone init failed: $e');
-    }
-  }
-
   /// True when [init] tried and failed. Notifications will not work, but the app must
   /// still run.
   static bool _initFailed = false;
@@ -75,7 +47,6 @@ class NotificationService {
   /// A notification stack that fails to start is a degraded app, not a stuck one.
   static Future<void> init() async {
     if (_ready || _initFailed) return;
-    _initTimeZones();
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: false,
@@ -88,6 +59,11 @@ class NotificationService {
         onDidReceiveNotificationResponse: (r) => onTap?.call(r.payload),
       );
       _ready = true;
+      // Auto Pay was a monthly reminder until v2.13.3, armed under this id. It is a Boost
+      // card or bank mandate now, so drop any reminder still pending from before the update.
+      try {
+        await _plugin.cancel(918001);
+      } catch (_) {}
       try {
         final launch = await _plugin.getNotificationAppLaunchDetails();
         if (launch?.didNotificationLaunchApp == true) {
@@ -333,76 +309,6 @@ class NotificationService {
         presented == plan.show.length &&
         plan.newLastSeen != null) {
       await _setLastSeen(userId, plan.newLastSeen!);
-    }
-  }
-
-  // ── Scheduled reminders (Auto Pay) ─────────────────────────────────────────
-
-  /// Fixed id so re-scheduling REPLACES the pending reminder instead of stacking a second
-  /// one. Changing the day in settings would otherwise leave the old alert armed.
-  static const int autoPayReminderId = 918001;
-
-  /// Arm the Auto Pay reminder for [when].
-  ///
-  /// One-shot, deliberately, rather than `matchDateTimeComponents: dayOfMonthAndTime`:
-  /// a repeating monthly alarm cannot express "the 28th in February but the 30th
-  /// otherwise", and it keeps firing after the member turns Auto Pay off if a cancel is
-  /// ever missed. The screen re-arms the next one each time it runs.
-  static Future<bool> scheduleAutoPayReminder(
-      DateTime when, String body) async {
-    await init();
-    _initTimeZones();
-    try {
-      final prefs = await NotifPrefsStore.load();
-      if (!prefs.enabled) return false;
-
-      await cancelAutoPayReminder();
-      final at = tz.TZDateTime.from(when, tz.local);
-      if (!at.isAfter(tz.TZDateTime.now(tz.local))) return false;
-
-      await _plugin.zonedSchedule(
-        autoPayReminderId,
-        'Auto Pay reminder',
-        body,
-        at,
-        NotificationDetails(
-          android: await _android(NotifCategory.payments, prefs),
-          iOS: DarwinNotificationDetails(
-            presentSound: prefs.sound,
-            sound: prefs.sound ? '$_soundName.wav' : null,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: 'autopay',
-      );
-      return true;
-    } catch (e) {
-      // Exact-alarm permission can be refused on Android 12+; the screen still shows the
-      // next date, and the on-resume overdue check catches a reminder that never fired.
-      debugPrint('scheduleAutoPayReminder failed: $e');
-      return false;
-    }
-  }
-
-  static Future<void> cancelAutoPayReminder() async {
-    await init();
-    try {
-      await _plugin.cancel(autoPayReminderId);
-    } catch (_) {}
-  }
-
-  /// Reminders the OS still has armed — used to show the member the truth rather than
-  /// what the app merely intended.
-  static Future<bool> hasAutoPayReminder() async {
-    await init();
-    if (_initFailed) return false;
-    try {
-      final pending = await _plugin.pendingNotificationRequests();
-      return pending.any((r) => r.id == autoPayReminderId);
-    } catch (_) {
-      return false;
     }
   }
 

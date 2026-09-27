@@ -7,10 +7,8 @@ import 'api.dart';
 import 'api_changes.dart';
 import '../config/app_version.dart';
 import 'background_poll.dart';
-import 'autopay.dart';
 import 'api_service.dart';
 import 'secure_store.dart';
-import 'notification_prefs.dart';
 import 'notification_service.dart';
 import 'response_utils.dart';
 import 'live_refresh.dart';
@@ -1404,59 +1402,6 @@ class UserSession extends ChangeNotifier {
     if (isLoggedIn) unawaited(refreshNotifications(raiseAlerts: true));
   }
 
-  /// Auto Pay reminder catch-up.
-  ///
-  /// The OS drops scheduled alarms — a reboot clears them, battery optimisation defers
-  /// them, and Android 12+ can refuse to arm one at all. Without this, a member who
-  /// turned Auto Pay on would simply never hear from it and would not know why. Riding
-  /// the existing poll costs nothing: it already runs whenever they are signed in.
-  Future<void> _checkAutoPayReminder() async {
-    try {
-      final prefs = await AutoPayStore.load();
-      final now = DateTime.now();
-      if (!reminderOverdue(prefs, now)) return;
-
-      final months = monthsToSettle(prefs, now);
-      const names = [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December',
-      ];
-      final label = months.length == 1
-          ? '${names[months.first.month - 1]} ${months.first.year}'
-          : '${months.length} months';
-
-      final shown = await NotificationService.present(
-        title: 'Auto Pay reminder',
-        body: 'Time to settle $label. Open Payments to review and pay.',
-        category: NotifCategory.payments,
-      );
-
-      // Only record it as delivered if it actually was. Stamping the mark on a
-      // suppressed alert (muted category, quiet hours) would swallow the month's
-      // reminder entirely — the same silent-loss bug the diff logic guards against.
-      if (shown) {
-        await AutoPayStore.save(
-            prefs.copyWith(lastRemindedMs: now.millisecondsSinceEpoch));
-        // Arm the following month while we are here.
-        await NotificationService.scheduleAutoPayReminder(
-            nextReminder(prefs, now),
-            'Time to settle your next fees. Tap to pay.');
-      }
-    } catch (e) {
-      debugPrint('autopay reminder check failed: $e');
-    }
-  }
-
   Future<void> refreshNotifications({bool raiseAlerts = false}) {
     if (_pollingPaused) return Future.value();
     final pending = _notificationsInFlight;
@@ -1483,7 +1428,6 @@ class UserSession extends ChangeNotifier {
       if (raiseAlerts && isLoggedIn && userId != null) {
         await NotificationService.alertForNew(
             userId: userId, rows: notifications ?? const []);
-        await _checkAutoPayReminder();
       }
     } catch (e) {
       if (epoch != ApiService.sessionEpoch ||

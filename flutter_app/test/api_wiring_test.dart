@@ -3,7 +3,7 @@
 // This is a STATIC audit: it scans every .dart file under lib/, pulls out each
 // `ApiService.<verb>('<path>')` call, and checks path and verb against
 // test/fixtures/club_api_routes.json — the route table taken from the live UAT swagger
-// (73 paths, fetched 2026-09-10).
+// (78 paths, fetched 2026-09-27).
 //
 // It catches the failure mode no amount of Dart type-checking can: a path typo, a renamed
 // route, or a GET against a POST-only endpoint. Those compile perfectly and fail only
@@ -14,6 +14,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dclix_app/services/api_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// One `ApiService.<verb>('<path>')` call found in the source.
@@ -126,7 +127,7 @@ void main() {
     expect(calls.length, greaterThan(60),
         reason:
             'only found ${calls.length} calls — the parser is probably broken');
-    expect(routes.length, 73);
+    expect(routes.length, 78);
     expect(calls.map((c) => c.file).toSet(), contains('boost_payment.dart'));
   });
 
@@ -193,13 +194,13 @@ void main() {
     expect(wrong, isEmpty, reason: wrong.join('\n'));
   });
 
-  test('only /Bcpg routes are sent to the other host', () {
-    // /Bcpg is not deployed to production and is routed to UAT instead. If any other path
-    // ever started matching isBoostPath, ordinary traffic would silently cross hosts.
-    final boost = calls.where((c) => c.path.startsWith('/Bcpg')).toList();
+  test('only the Boost routes are sent to the other host', () {
+    // /Bcpg and /AutoPay are not deployed to production and are routed to UAT instead. If any
+    // other path ever started matching isBoostPath, ordinary traffic would silently cross hosts.
+    final boost = calls.where((c) => ApiService.isBoostPath(c.path)).toList();
     expect(boost, isNotEmpty, reason: 'the Boost calls disappeared');
-    expect(boost.map((c) => c.file).toSet(), {'boost_payment.dart'},
-        reason: 'Boost calls should stay in one place');
+    expect(boost.map((c) => c.file).toSet(), {'boost_payment.dart', 'autopay.dart'},
+        reason: 'Boost calls should stay in the two Boost services');
   });
 
   test('reports which server routes the app never calls', () {

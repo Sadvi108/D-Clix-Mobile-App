@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// the React Native endpoint table that the ported screens call.
 final _apiRe = RegExp(r'\b(?:Rn)?Api\.([a-zA-Z0-9_]+)');
 final _serviceRe = RegExp(
-    r'\b(BoostPayment|OnlineSubmissions|PurchaseService|NotificationService|AutoPayStore|ChatStore)\.([a-zA-Z0-9_]+)');
+    r'\b(BoostPayment|OnlineSubmissions|PurchaseService|NotificationService|AutoPay|ChatStore)\.([a-zA-Z0-9_]+)');
 final _sessionRe = RegExp(r'\bUserSession\b');
 
 class ScreenWiring {
@@ -124,11 +124,7 @@ const _expectedServices = <String, List<String>>{
   ],
   'payments_screen': ['BoostPayment.start', 'BoostPayment.confirm'],
   'term_payment_screen': ['BoostPayment.start', 'BoostPayment.confirm'],
-  'autopay_screen': [
-    'NotificationService.scheduleAutoPayReminder',
-    'NotificationService.cancelAutoPayReminder',
-    'AutoPayStore.load',
-  ],
+  'autopay_screen': ['AutoPay.status', 'AutoPay.setup', 'AutoPay.cancel'],
   'notification_settings_screen': ['NotificationService.sendTestAlert'],
 };
 

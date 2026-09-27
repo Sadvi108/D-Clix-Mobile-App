@@ -40,10 +40,9 @@ void main() {
       ].join(' ').toLowerCase();
 
   test('no page claims fees are paid without the member', () {
-    // Club.Api has no recurring-payment route, so nothing can charge a member on a timer.
-    // A member who believes their fees settle on their own stops checking and falls into
-    // arrears — that is the harm, and it comes from the CLAIM, not from the feature name.
-    // (Naming Auto Pay is fine and necessary; promising automatic payment is not.)
+    // Only a member who switched on Auto Pay and linked a card or bank on Boost is charged
+    // without tapping Pay. A member who believes their fees settle on their own stops
+    // checking and falls into arrears, so no page may make that promise in general terms.
     final banned = [
       'settles fees',
       'paid automatically',
@@ -61,16 +60,14 @@ void main() {
     }
   });
 
-  test('the Auto Pay page states the limitation outright', () {
-    // The disclaimer is the whole reason the page is safe to ship. If it is ever edited
-    // away, this fails rather than quietly shipping a false promise.
+  test('the Auto Pay page says where card details go and how to stop', () {
     final page = kGuideSteps.firstWhere((s) => s.key == 'autopay');
     final blob = _blob(page);
-    expect(blob, contains('never taken automatically'));
-    expect(blob, contains('tap pay'),
-        reason: 'the member must be told they still confirm each payment');
-    expect(page.note.trim(), isNotEmpty,
-        reason: 'this belongs in the highlighted callout, not buried in a step');
+    expect(blob, contains('boost'));
+    expect(blob, contains('never sees'),
+        reason: 'the member must know the app does not hold their card or bank login');
+    expect(blob, contains('turn auto pay off'));
+    expect(page.note.trim(), isNotEmpty);
   });
 
   test('the sign-in page comes first', () {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../theme/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -64,14 +66,25 @@ class BcpgWebViewScreen extends StatefulWidget {
     if (!['http', 'https'].contains(uri.scheme) ||
         !allowedHosts.contains(uri.host)) return false;
     final path = uri.path.toLowerCase().replaceFirst(RegExp(r'/+$'), '');
-    // `/Payment/Completed/{status}` and `/Payment/Finalizing` are where the invoice gateway
-    // lands the browser; `/Bcpg/Redirect` is the purchase route's equivalent. Without the
-    // Payment pages the WebView would sit on the finished page and never verify the payment.
+    // Boost first sends the browser to a server Finalizing page (/Payment/Finalizing for
+    // invoices, /AutoPay/Finalizing for a saved card). That page records the result, so it
+    // must load; it then redirects to /Payment/Completed/{status}, which is the return.
+    // `/Bcpg/Redirect` is the purchase route's equivalent.
     return path == '/bcpg/redirect' ||
-        path == '/payment/finalizing' ||
         path == '/payment/completed' ||
         path.startsWith('/payment/completed/') ||
         path == '/${legacyPath.toLowerCase()}';
+  }
+
+  /// `success` or `failed` from `/Payment/Completed/{status}`; null for any other return.
+  /// A hint for the message only — the caller still asks the server what happened.
+  static String? returnStatus(String? url) {
+    final segments = Uri.tryParse(url ?? '')?.pathSegments ?? const <String>[];
+    final i = segments.indexWhere((s) => s.toLowerCase() == 'completed');
+    if (i < 1 || i + 1 >= segments.length || segments[i - 1].toLowerCase() != 'payment') {
+      return null;
+    }
+    return segments[i + 1].toLowerCase();
   }
 
   @override
@@ -96,13 +109,16 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
   /// the BROWSER back, not a trustworthy result, and the app previously asked Boost
   /// directly using a merchant secret compiled into the APK. The caller now confirms
   /// through the backend (BoostPayment.confirm), which verifies and reconciles.
-  Future<void> _handleReturn() async {
+  Future<void> _handleReturn(String? url) async {
     if (_returned) return;
     _returned = true;
     if (!mounted) return;
     setState(() => _verifying = true);
-    Navigator.of(context)
-        .pop({'returned': true, 'referenceId': widget.referenceId});
+    Navigator.of(context).pop({
+      'returned': true,
+      'referenceId': widget.referenceId,
+      'status': BcpgWebViewScreen.returnStatus(url),
+    });
   }
 
   Future<bool> _confirmAbort() async {
@@ -184,15 +200,28 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
                   if (_isReturnUrl(url)) {
                     // Don't actually navigate to the return URL — bounce
                     // back into the app and verify.
-                    await _handleReturn();
+                    await _handleReturn(url);
                     return NavigationActionPolicy.CANCEL;
                   }
                   return NavigationActionPolicy.ALLOW;
                 },
                 onLoadStop: (controller, url) async {
                   if (_isReturnUrl(url?.toString())) {
-                    await _handleReturn();
+                    await _handleReturn(url?.toString());
                   }
+                },
+                // The Finalizing page lives on the UAT host, whose certificate is self-signed.
+                // Trust exactly the pinned certificate there, as ApiService.client does, so the
+                // page can record the result. iOS asks this for EVERY https page, so anything
+                // else must get null (the platform's normal validation), never CANCEL — that
+                // would block Boost's own page and every bank page.
+                onReceivedServerTrustAuthRequest: (controller, challenge) async {
+                  final space = challenge.protectionSpace;
+                  final der = space.sslCertificate?.x509Certificate?.encoded;
+                  return der != null &&
+                          ApiService.trustsBadCertificate(space.host, base64Encode(der))
+                      ? ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.PROCEED)
+                      : null;
                 },
               ),
               if (_progress > 0 && _progress < 1)

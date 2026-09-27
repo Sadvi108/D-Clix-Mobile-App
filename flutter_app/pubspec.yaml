@@ -52,7 +52,6 @@ dependencies:
   # PluginRegistrantCallback), which no longer exists — it fails to compile on
   # Flutter 3.41. 0.10.x is the current line.
   workmanager: ^0.10.3
-  timezone: ^0.9.4
   http: 1.2.2
 
   # Boost gateway — the checkout page opens in an in-app WebView. The HMAC signing

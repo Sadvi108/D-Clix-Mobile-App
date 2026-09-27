@@ -83,18 +83,35 @@ void main() {
   });
 
   group('return leg', () {
-    // The invoice gateway comes back through /Payment/Completed/{status} (and /Payment/Finalizing
-    // on the way), not /Bcpg/Redirect. Unrecognised, the WebView would sit on the finished page
-    // and the payment would never be verified.
-    test('recognises the invoice gateway return pages', () {
+    // Boost sends the browser to a server Finalizing page (/Payment/Finalizing for invoices,
+    // /AutoPay/Finalizing for a saved card). That page records the result, then redirects to
+    // /Payment/Completed/{Success|Failed} — the page the app watches for.
+    test('/Payment/Completed/{status} closes the WebView', () {
       for (final url in [
         '${ApiService.baseUrl}/Payment/Completed/Success',
         '${ApiService.baseUrl}/Payment/Completed/Failed',
         '${ApiService.boostBaseUrl}/Payment/Completed/Success',
-        '${ApiService.baseUrl}/Payment/Finalizing?referenceId=SUB68',
       ]) {
         expect(BcpgWebViewScreen.isMerchantReturn(url), isTrue, reason: url);
       }
+    });
+
+    test('the Finalizing pages are left to load, or the server never records the result', () {
+      for (final url in [
+        '${ApiService.baseUrl}/Payment/Finalizing',
+        '${ApiService.boostBaseUrl}/Payment/Finalizing',
+        '${ApiService.boostBaseUrl}/AutoPay/Finalizing?referenceId=TOKENIZE_1&status=success',
+      ]) {
+        expect(BcpgWebViewScreen.isMerchantReturn(url), isFalse, reason: url);
+      }
+    });
+
+    test('reads the outcome out of the Completed path', () {
+      expect(BcpgWebViewScreen.returnStatus('${ApiService.boostBaseUrl}/Payment/Completed/Success'),
+          'success');
+      expect(BcpgWebViewScreen.returnStatus('${ApiService.baseUrl}/Payment/Completed/Failed'), 'failed');
+      expect(BcpgWebViewScreen.returnStatus('${ApiService.boostBaseUrl}/Bcpg/Redirect?status=paid'), isNull);
+      expect(BcpgWebViewScreen.returnStatus(null), isNull);
     });
 
     test('still recognises the Bcpg return, and nothing off-host', () {
