@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -66,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
   Widget build(BuildContext context) {
     final c = context.appColors;
     final session = context.watch<UserSession>();
-    final width = MediaQuery.sizeOf(context).width;
     final top = MediaQuery.paddingOf(context).top;
     final tabBarHeight = tabBarClearance(context);
 
@@ -84,7 +82,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final beltShort = grade.split(' ').first;
     final num dueAmount = RnApi.number(stats?['dueAmount']);
     final invoiceCount = RnApi.number(stats?['invoiceCount']).toInt();
-    final offers = ((stats?['myoffers'] as List?) ?? const []).whereType<Map>().toList();
     final trainingFirstLine = '${info?['trainingTme'] ?? ''}'
         .split(RegExp(r'\r?\n'))
         .where((l) => l.trim().isNotEmpty)
@@ -551,77 +548,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
 
                     sectionHead('Quick Access'),
                     QuickGrid(items: kStudentQuickCards),
-
-                    if (offers.isNotEmpty) ...[
-                      sectionHead('Featured Offer${offers.length > 1 ? 's' : ''}',
-                          link: 'View all', onLink: () => context.push('/events')),
-                      SizedBox(
-                        height: 180,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: Gaps.xl),
-                          itemCount: offers.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, i) {
-                            final o = offers[i];
-                            final img = _firstDocumentUrl(o['attachments']) ?? _firstDocumentUrl(o['previewImages']);
-                            final code = '${o['code'] ?? ''}';
-                            return Touchable(
-                              onPress: () => context.push('/offer/${Uri.encodeComponent(code)}'),
-                              activeOpacity: 0.9,
-                              child: Container(
-                                width: width - Gaps.xl * 2 - (offers.length > 1 ? 36 : 0),
-                                clipBehavior: Clip.antiAlias,
-                                decoration: BoxDecoration(
-                                    color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.xl)),
-                                child: Stack(fit: StackFit.expand, children: [
-                                  if (img != null)
-                                    CachedNetworkImage(
-                                        imageUrl: img,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, __, ___) => const SizedBox()),
-                                  const DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [Color(0x0D0F172A), Color(0xD90F172A)],
-                                      ),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text((code.isEmpty ? 'OFFER' : code).toUpperCase(),
-                                            style: const TextStyle(
-                                                color: Color(0xFFFDBA74),
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w700,
-                                                letterSpacing: 1.5)),
-                                        const SizedBox(height: 4),
-                                        Text('${o['name'] ?? o['title'] ?? ''}',
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                                        const SizedBox(height: 6),
-                                        Text('📍 ${clubName.isEmpty ? 'Your Academy' : clubName}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(color: white85, fontSize: 11)),
-                                      ],
-                                    ),
-                                  ),
-                                ]),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
                   ]),
               ],
             ),
@@ -630,14 +556,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
       ]),
     );
   }
-}
-
-String? _firstDocumentUrl(dynamic list) {
-  if (list is List && list.isNotEmpty && list.first is Map) {
-    final url = '${(list.first as Map)['documentUrl'] ?? ''}';
-    if (url.isNotEmpty) return url;
-  }
-  return null;
 }
 
 /// The student's main details — registration, training, grading, next tournament — as the

@@ -65,7 +65,7 @@ const kGuideSteps = <GuideStep>[
           'After one successful sign-in the app remembers this device, so you go straight to your dashboard next time. Logging out from Profile clears it.'),
     ],
     tips: [
-      'Not a member yet? Contact your academy at the bottom of this screen — accounts are created by the club, not in the app.',
+      'Not a member yet? Ask your academy — accounts are created by the club, not in the app.',
       'This guide is on the sign-in screen too, so you can read it before you have an account.',
     ],
   ),

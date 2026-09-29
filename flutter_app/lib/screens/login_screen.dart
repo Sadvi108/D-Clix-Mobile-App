@@ -478,19 +478,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 20),
-                Text.rich(
-                  TextSpan(
-                    text: 'New to D-Clix? ',
-                    style: TextStyle(color: c.textSecondary, fontSize: 13),
-                    children: [
-                      TextSpan(
-                          text: 'Contact your academy',
-                          style: TextStyle(color: c.primary, fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
               ]),
             ),
           ),
