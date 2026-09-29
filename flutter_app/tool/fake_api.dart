@@ -35,6 +35,11 @@ const _member = {
   'eCenterName': 'Sample Exam Centre',
   'instructorName': 'Sensei Sample',
   'trainingTme': '8:00 PM - 9:30 PM',
+  // The grading and tournament keys a student's MyInfo carries (Home's "Your info" card).
+  'lastGradingDate': '2026-08-08T00:00:00',
+  'tournamentName': 'Sample Open Championship 2026 @ Sample Sports Complex',
+  'tournamentDate': '2026-10-10T00:00:00',
+  'tournamentToDate': '2026-10-10T00:00:00',
   'handPhone': '000-0000000',
   'emailAddress': 'member@example.com',
   'gender': 'Male',

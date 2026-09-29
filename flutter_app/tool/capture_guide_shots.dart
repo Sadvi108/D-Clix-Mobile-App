@@ -118,6 +118,7 @@ void _seedSession() {
     'studentId': 1,
     'clubId': 1,
     'name': 'Alex Tan',
+    'code': '00000001',
     'status': 'Active',
     'userType': 3
   };

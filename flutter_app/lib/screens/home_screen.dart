@@ -97,6 +97,9 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final clubName = userField('clubName');
     final tCenterName = '${info?['tCenterName'] ?? ''}';
     final instructorName = '${info?['instructorName'] ?? ''}';
+    // MyInfo has no student code; the login's `code` is it — unless it only repeats the reg no.
+    final loginCode = userField('code');
+    final studentCode = loginCode == '${info?['registrationNo'] ?? ''}'.trim() ? '' : loginCode;
 
     const white85 = Color(0xD9FFFFFF);
 
@@ -486,6 +489,16 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                     ),
                   ),
 
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gaps.xl, 18, Gaps.xl, 0),
+                  child: YourInfoCard(
+                    info: info,
+                    studentCode: studentCode,
+                    activeStudentName: activeName,
+                    loading: _info.loading,
+                  ),
+                ),
+
                 Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     sectionHead("Today's Class", link: 'See all', onLink: () => context.go('/schedule')),
                     Container(
@@ -624,6 +637,122 @@ String? _firstDocumentUrl(dynamic list) {
     if (url.isNotEmpty) return url;
   }
   return null;
+}
+
+/// The student's main details — registration, training, grading, next tournament — as the
+/// production home showed them. The React Native port had dropped the card (restored 2026-09-29).
+///
+/// Everything comes from `/Profile/MyInfo` except [studentCode], the login's `code`. MyInfo is
+/// always the signed-in student, so when a guardian has switched to another child the card says
+/// so instead of showing one child's details under another's name.
+class YourInfoCard extends StatelessWidget {
+  final Map<String, dynamic>? info;
+  final String studentCode;
+  final String activeStudentName;
+  final bool loading;
+  const YourInfoCard(
+      {super.key, required this.info, required this.studentCode, this.activeStudentName = '', this.loading = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final data = info;
+    String field(String key) => '${data?[key] ?? ''}'.replaceAll('\r', '').trim();
+
+    Widget note(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 18, color: c.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: c.textSecondary, height: 1.4))),
+          ]),
+        );
+
+    Widget row((String, String) entry) {
+      final (label, value) = entry;
+      return MergeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(
+              width: 124,
+              child: Text(label,
+                  style: TextStyle(fontSize: 13, color: c.textSecondary, fontWeight: FontWeight.w600, height: 1.35)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(value.isEmpty ? '—' : value,
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: value.isEmpty ? c.textMuted : c.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35)),
+            ),
+          ]),
+        ),
+      );
+    }
+
+    final other = activeStudentName.trim();
+    final self = field('name');
+    final Widget body;
+    if (other.isNotEmpty && self.isNotEmpty && other.toLowerCase() != self.toLowerCase()) {
+      body = note(Ion.informationCircleOutline,
+          "$other's details aren't available here — the club system only sends the signed-in student's.");
+    } else if (data == null) {
+      body = loading
+          ? note(Ion.timeOutline, 'Loading your details…')
+          : note(Ion.alertCircleOutline, "Couldn't load your details. Pull down to refresh.");
+    } else {
+      final from = fmtDateGB(data['tournamentDate']);
+      final to = fmtDateGB(data['tournamentToDate']);
+      final sections = [
+        [('Registration No', field('registrationNo')), ('Student Code', studentCode.trim())],
+        [
+          ('Training Centre', field('tCenterName')),
+          ('Training Time', field('trainingTme')),
+          ('Exam Center', field('eCenterName')),
+          ('Instructor Name', field('instructorName')),
+        ],
+        [('Current Grade', field('currentGrade')), ('Last Grading Date', fmtDateGB(data['lastGradingDate']))],
+        [('Next Tournament', field('tournamentName')), ('Tournament Date', to.isEmpty || to == from ? from : '$from – $to')],
+      ];
+      body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final (i, section) in sections.indexed) ...[
+          if (i > 0) Divider(height: 18, thickness: 1, color: c.primary.hexA('40')),
+          ...section.map(row),
+        ],
+      ]);
+    }
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(Radii.xl),
+        boxShadow: Shadows.soft(c),
+        border: c.isDark ? Border.all(color: c.border) : null,
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: c.gradient, begin: Alignment.centerLeft, end: Alignment.centerRight),
+          ),
+          child: Row(children: [
+            const Icon(Ion.idCardOutline, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Semantics(
+              header: true,
+              child: const Text('Your info',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
+            ),
+          ]),
+        ),
+        Padding(padding: const EdgeInsets.fromLTRB(18, 10, 18, 12), child: body),
+      ]),
+    );
+  }
 }
 
 /// The 4-per-row tile grid (`grid` / `gridCard` styles, width 23%, space-between).
