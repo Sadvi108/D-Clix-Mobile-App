@@ -144,16 +144,8 @@ final Map<String, ReportSpec> kReportSpecs = {
         ? Future<dynamic>.value(const <dynamic>[])
         : Api.listingTrainingTimeByTcId(q.tCenterId),
   ),
-  'grading-schedule': ReportSpec(
-    title: 'Grading Schedule',
-    filters: const [RFilter.examCenter, RFilter.dateRange],
-    fetch: (q) => Api.reportsGradingSchedule(reportBody(q)),
-  ),
-  'grading-past': ReportSpec(
-    title: 'Grading Past',
-    filters: const [RFilter.examCenter, RFilter.dateRange],
-    fetch: (q) => Api.reportsGradingSchedule(reportBody(q)),
-  ),
+  // No grading specs: /Reports/GradingSchedule returns every club's exams, so it is only read
+  // through RnApi.gradingSchedule, which scopes it to the instructor's club (RGradingScreen).
   'receipt': ReportSpec(
     title: 'Receipt',
     filters: const [RFilter.trainingCenter, RFilter.dateRange, RFilter.status],

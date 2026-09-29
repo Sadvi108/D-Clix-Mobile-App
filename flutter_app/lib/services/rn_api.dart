@@ -57,8 +57,20 @@ class RnApi {
       _rows(await _report('/Reports/Receipts', body));
   static Future<List<Map<String, dynamic>>> attendanceReport(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/Attendance', body));
-  static Future<List<Map<String, dynamic>>> gradingSchedule(Map<String, dynamic> body) async =>
-      _rows(await _report('/Reports/GradingSchedule', body));
+  /// The instructor's own club's exam sessions only.
+  ///
+  /// `/Reports/GradingSchedule` answers any instructor with every club's exams — a live probe
+  /// (2026-09-29) returned 764 rows across 80+ exam centres for a club that has 4 — and its rows
+  /// carry no club field, only the exam centre name `ecName`. So a row is kept only when its
+  /// centre is one of the caller's own, per the club-scoped `/Listing/DropdownListByType/2`.
+  /// Fails closed: no centre list means no rows, never everyone's. The real fix is server-side.
+  static Future<List<Map<String, dynamic>>> gradingSchedule(Map<String, dynamic> body) async {
+    final [report, centres] =
+        await Future.wait([_report('/Reports/GradingSchedule', body), Api.listingDropdownListByType(2)]);
+    String norm(Object? v) => '${v ?? ''}'.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    final own = {for (final c in _rows(centres)) norm(c['text'])}..remove('');
+    return [for (final r in _rows(report)) if (own.contains(norm(r['ecName']))) r];
+  }
   static Future<List<Map<String, dynamic>>> tournamentSummary(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/TournamentSummary', numericReportType(body)));
   static Future<List<Map<String, dynamic>>> purchaseRequests(Map<String, dynamic> body) async =>
