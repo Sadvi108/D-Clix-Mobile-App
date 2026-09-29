@@ -21,6 +21,7 @@ import '../services/user_session.dart';
 import '../services/web_download.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
+import '../utils/progress_stats.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 import 'payment/bcpg_webview_screen.dart';
@@ -86,7 +87,15 @@ class _PaymentsScreenState extends State<PaymentsScreen>
   late final _history = useApi(() => RnApi.receipts({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
 
   Map<String, dynamic> get _user => UserSession.instance.authData ?? const <String, dynamic>{};
-  int? get _accountId => _activeAccount?.id ?? (_user['id'] == null ? null : _intOf(_user['id']));
+  int? get _accountId =>
+      _activeAccount?.id ?? _appWideAccountId ?? (_user['id'] == null ? null : _intOf(_user['id']));
+
+  /// The child picked app-wide (Home or Profile switcher), so Payments opens on the same one.
+  /// The switcher and these chips both carry /Listing/MySiblings ids.
+  int? get _appWideAccountId {
+    final id = _intOf(UserSession.instance.activeStudentId);
+    return id == 0 ? null : id;
+  }
 
   @override
   void initState() {
@@ -314,7 +323,8 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         );
 
     final body = <Widget>[];
-    if (_seg == 'pay') {
+    // One child for the whole screen: Pay and History follow the same chip.
+    if (_seg == 'pay' || _seg == 'history') {
       body.add(SizedBox(
         height: 46,
         child: ListView.separated(
@@ -350,6 +360,8 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           },
         ),
       ));
+    }
+    if (_seg == 'pay') {
       body.add(Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Touchable(
@@ -459,12 +471,24 @@ class _PaymentsScreenState extends State<PaymentsScreen>
     }
 
     if (_seg == 'history') {
-      final rows = session.scopedRows(_history.data).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+      // /Reports/Receipts returns the whole branch to a student token. Keep the chip's child only:
+      // the signed-in student by name or IC (not displayName, which becomes an app-wide-picked
+      // sibling's name), a sibling by positive name match only.
+      final chosen = accounts.where((a) => a.id == accountId).firstOrNull;
+      final sibling = chosen != null && chosen.id != _intOf(user['id']) ? chosen : null;
+      final all = (_history.data ?? const <Map<String, dynamic>>[]).cast<Map>().toList();
+      final rows = scopeStudentRows(all,
+              self: StudentIdentity(name: '${user['name'] ?? ''}', ic: '${user['icNo'] ?? ''}'),
+              selected: sibling == null ? null : StudentIdentity(name: sibling.name))
+          .rows
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
       if (_history.loading) body.add(const SkeletonList(rows: 4, lines: 2, padding: EdgeInsets.only(top: 4)));
       if (!_history.loading && _history.error != null && rows.isEmpty) {
         body.add(ErrorState(message: _history.error, onRetry: _history.reload));
       } else if (!_history.loading && rows.isEmpty) {
-        body.add(emptyTxt('No receipts found.'));
+        body.add(emptyTxt(
+            sibling == null || all.isEmpty ? 'No receipts found.' : 'No receipts for ${sibling.name.trim()} yet.'));
       }
       if (!_history.loading) {
         for (var i = 0; i < rows.length; i++) {
