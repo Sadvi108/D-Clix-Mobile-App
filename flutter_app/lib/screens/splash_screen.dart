@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -27,111 +28,116 @@ const double kIntroStillAt = 2500; // a settled frame: shown as-is when Reduce M
 const double kIntroGlideMs = 600; // logged out: badge and word glide into the Login header
 const double kIntroZoomMs = 450; // logged in: the stage zooms away into Home
 
-const double _wordScale = 1.25; // glyphs are designed at 22 units tall, drawn 1.25x
 const double _wordSlide = 66; // the word moves down this far to make room for the badge
 const double _ringR = 39.5; // the badge's own orange ring
 const double _badgeD = 96 / 1.24; // badge diameter
 const Offset _ringCentre = Offset(50, 50);
-const int _m = 60; // points per stroke
 
 // ---------------------------------------------------------------------------------------
-// The word. Eight monoline strokes, each blooming out of one of the eight dots.
+// The wordmark, traced off the badge artwork so the intro uses the logo's own lettering:
+// a heavy geometric sans with a stem 0.27 of the cap height, a semicircular D bowl, a
+// ring-shaped C cut flat at the terminals, and a wide X. Letters are laid out on a 22-unit
+// cap height with x running from the D's left edge, then placed onto the 100x100 stage.
 
-enum StrokeInk { ink, slash }
+enum LetterInk { ink, flash }
 
-const Offset _dotFrom = Offset(50, 52); // where the first dot pops, and the eight split
-const double _strokeW = 5.5 * _wordScale;
+const Offset _dotFrom = Offset(50, 52); // where the first dot pops, and the six split
+const double _dotR = 3.4; // the dots each letter grows out of
+// Outlines traced off the artwork, in letter space: cap height 22, x running from the D's
+// left edge. Regenerated with tool/trace_wordmark.py if the badge art ever changes.
+const _dOuter = [Offset(0.10, 0.00), Offset(13.49, -0.10), Offset(16.81, 0.52), Offset(20.34, 2.39), Offset(22.93, 5.40), Offset(23.97, 8.09), Offset(24.18, 9.75), Offset(23.97, 13.28), Offset(22.31, 17.02), Offset(19.92, 19.41), Offset(17.64, 20.65), Offset(15.15, 21.48), Offset(11.42, 21.90), Offset(0.21, 21.90), Offset(-0.10, 21.58), Offset(-0.10, 0.21)];
+const _dCounter = [Offset(6.02, 4.67), Offset(5.92, 16.81), Offset(6.23, 17.12), Offset(12.04, 17.12), Offset(14.53, 16.50), Offset(15.57, 15.88), Offset(16.92, 14.53), Offset(17.95, 11.83), Offset(17.95, 9.55), Offset(17.12, 7.26), Offset(14.94, 5.29), Offset(12.87, 4.67)];
+const _cOutline = [Offset(51.16, -0.62), Offset(53.55, -0.73), Offset(57.28, -0.10), Offset(59.15, 0.52), Offset(61.75, 2.08), Offset(59.36, 6.12), Offset(56.87, 4.88), Offset(54.58, 4.25), Offset(50.23, 4.46), Offset(47.53, 5.92), Offset(46.18, 7.47), Offset(45.35, 9.34), Offset(45.35, 12.25), Offset(45.76, 13.49), Offset(46.39, 14.53), Offset(47.94, 16.08), Offset(48.98, 16.71), Offset(51.06, 17.33), Offset(54.17, 17.33), Offset(57.49, 16.29), Offset(59.15, 15.05), Offset(59.88, 15.77), Offset(61.95, 19.09), Offset(59.77, 20.65), Offset(57.28, 21.69), Offset(55.21, 22.10), Offset(51.26, 22.31), Offset(48.36, 21.90), Offset(45.87, 21.07), Offset(43.58, 19.82), Offset(41.20, 17.64), Offset(39.33, 13.91), Offset(39.12, 8.51), Offset(39.75, 6.43), Offset(40.99, 4.36), Offset(43.17, 2.18), Offset(46.08, 0.52), Offset(48.57, -0.31)];
+const _lOutline = [Offset(65.07, 0.00), Offset(71.08, 0.00), Offset(71.08, 16.60), Offset(71.40, 16.92), Offset(82.60, 16.92), Offset(82.92, 17.23), Offset(82.92, 21.58), Offset(82.60, 21.90), Offset(65.38, 21.90), Offset(65.07, 21.58)];
+const _iOutline = [Offset(86.44, 0.00), Offset(92.15, -0.10), Offset(92.46, 0.21), Offset(92.46, 21.58), Offset(92.15, 21.90), Offset(86.75, 21.90), Offset(86.44, 21.58)];
+const _xOutline = [Offset(95.58, 0.00), Offset(102.32, -0.10), Offset(106.99, 6.02), Offset(107.51, 6.33), Offset(112.49, -0.10), Offset(119.13, -0.10), Offset(119.24, 0.42), Offset(117.37, 2.49), Offset(111.14, 10.79), Offset(118.41, 19.72), Offset(119.65, 21.38), Offset(119.65, 21.79), Offset(112.91, 21.90), Offset(107.82, 15.36), Offset(107.30, 15.05), Offset(101.91, 21.90), Offset(95.47, 21.90), Offset(95.58, 20.96), Offset(103.67, 11.00), Offset(103.67, 10.58), Offset(98.07, 3.74), Offset(95.58, 0.42)];
 
-class WordStroke {
-  WordStroke(this.to, this.mid, this.delay, this.ink, {this.fill});
+/// The flash between D and CLIX: a bar across the top, a notch under it, then a tail
+/// slanting down to a point. Traced the same way, and it sits centred in the gap.
+const _flashPts = [Offset(27.19, 9.34), Offset(35.91, 9.34), Offset(29.06, 20.55), Offset(30.72, 13.7), Offset(27.19, 13.7)];
 
-  /// The finished glyph stroke, in stage units, and the point it blooms from.
-  final List<Offset> to;
-  final Offset mid;
-  final double delay;
-  final StrokeInk ink;
+/// D / C L I X plus the flash, with the D's counter punched out of it.
+const _wordOutlines = <(List<List<Offset>>, LetterInk)>[
+  ([_dOuter, _dCounter], LetterInk.ink),
+  ([_flashPts], LetterInk.flash),
+  ([_cOutline], LetterInk.ink),
+  ([_lOutline], LetterInk.ink),
+  ([_iOutline], LetterInk.ink),
+  ([_xOutline], LetterInk.ink),
+];
 
-  /// The flash between D and CLIX is a filled shape, not a stroke: this is its outline,
-  /// and [to] samples the same outline so it blooms and measures like the others.
-  final Path? fill;
+/// How the letters sit on the 100x100 stage: big enough to fill a phone screen with a
+/// margin, centred on the badge.
+const double _place = 1.12;
+final Rect _letterBox = () {
+  final all = [for (final l in _wordOutlines) ...l.$1.expand((c) => c)];
+  return all.skip(1).fold(Rect.fromPoints(all.first, all.first), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
+}();
+final Offset _wordAt = Offset(50 - _letterBox.center.dx * _place, 52 - _letterBox.center.dy * _place);
+final Float64List _wordMatrix =
+    Float64List.fromList([_place, 0, 0, 0, 0, _place, 0, 0, 0, 0, 1, 0, _wordAt.dx, _wordAt.dy, 0, 1]);
 
-  /// The stroke at time [t], or null while the first dot has not split yet. Until it
-  /// opens the points sit on top of each other, which draws as a round dot.
-  ({List<Offset> pts, double e, double width, Offset from})? at(double t) {
-    if (t < kIntroSplitAt) return null;
-    final fly = Curves.easeOutCubic.transform(_clamp01((t - kIntroSplitAt) / 300));
-    final from = Offset.lerp(_dotFrom, mid, fly)!;
-    final e = Curves.easeOutBack.transform(_clamp01((t - kIntroGrowAt - delay) / 420));
-    return (pts: [for (final p in to) from + (p - mid) * e], e: e, width: _strokeW, from: from);
-  }
-}
-
-Offset _w(Offset p) => Offset(50 + (p.dx - 50) * _wordScale, 52 + (p.dy - 52) * _wordScale);
-/// The flash that stands between the D and the CLIX in the logo: a bar across the top,
-/// a notch under it, then a tail slanting down to a point just above the baseline. Traced
-/// off the badge artwork, where it is half the cap height and starts 0.43 of the way down.
-/// Centred in the gap between the D bowl's outer edge (17.75) and the C's (29.25), since
-/// the letters here are strokes: their round caps sit 2.75 outside the glyph path.
-const _flashPts = [Offset(19.1, 50.4), Offset(27.9, 50.4), Offset(21.0, 61.7), Offset(22.7, 54.8), Offset(19.1, 54.8)];
-final Path _flash = _polygon(_flashPts);
-
-Path _polygon(List<Offset> pts) => _polyline(pts)..close();
-
-Path _polyline(List<Offset> pts) {
+Path _polygon(List<Offset> pts) {
   final p = Path()..moveTo(pts.first.dx, pts.first.dy);
   for (final q in pts.skip(1)) {
     p.lineTo(q.dx, q.dy);
   }
+  return p..close();
+}
+
+Path _shape(List<List<Offset>> contours) {
+  final p = Path()..fillType = PathFillType.evenOdd;
+  for (final c in contours) {
+    p.addPath(_polygon(c), Offset.zero);
+  }
   return p;
 }
 
-List<Offset> _sample(Path p) {
-  final m = p.computeMetrics().single;
-  return [for (var i = 0; i < _m; i++) m.getTangentForOffset(m.length * i / (_m - 1))!.position];
+/// Path.getBounds() measures control points, which sit outside an arc, so measure the
+/// curve itself instead.
+Rect tightBounds(Path p) {
+  Rect? box;
+  for (final m in p.computeMetrics()) {
+    for (var i = 0; i <= 80; i++) {
+      final at = m.getTangentForOffset(m.length * i / 80)!.position;
+      final dot = Rect.fromPoints(at, at);
+      box = box?.expandToInclude(dot) ?? dot;
+    }
+  }
+  return box ?? Rect.zero;
 }
 
-Offset _centre(List<Offset> pts) {
-  final box = pts.skip(1).fold(Rect.fromPoints(pts.first, pts.first), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
-  return box.center;
+class WordLetter {
+  WordLetter(this.fill, this.delay, this.ink) : mid = tightBounds(fill).center;
+
+  /// The finished letter, in stage units, and the point it grows out of.
+  final Path fill;
+  final Offset mid;
+  final double delay;
+  final LetterInk ink;
+
+  /// The letter at time [t], or null while the first dot has not split yet. It is a dot
+  /// until [e] passes 0, then it springs open to full size about its own centre.
+  ({double e, Offset from})? at(double t) {
+    if (t < kIntroSplitAt) return null;
+    final fly = Curves.easeOutCubic.transform(_clamp01((t - kIntroSplitAt) / 300));
+    return (
+      e: Curves.easeOutBack.transform(_clamp01((t - kIntroGrowAt - delay) / 420)),
+      from: Offset.lerp(_dotFrom, mid, fly)!,
+    );
+  }
 }
 
-/// The eight strokes of D/CLIX, left to right, each blooming from its own dot.
-final List<WordStroke> wordStrokes = () {
-  final dBowl = Path()
-    ..moveTo(-2, 41)
-    ..lineTo(4, 41)
-    ..arcToPoint(const Offset(4, 63), radius: const Radius.circular(11))
-    ..lineTo(-2, 63);
-  final c = Path()
-    ..moveTo(50.8, 44.2)
-    ..arcToPoint(const Offset(50.8, 59.8), radius: const Radius.circular(11), largeArc: true, clockwise: false);
-  final glyphs = <(Path, StrokeInk)>[
-    (_polyline(const [Offset(-2, 41), Offset(-2, 63)]), StrokeInk.ink), // D stem
-    (dBowl, StrokeInk.ink), // D bowl
-    (_flash, StrokeInk.slash), // the flash between D and CLIX
-    (c, StrokeInk.ink),
-    (_polyline(const [Offset(58, 41), Offset(58, 63), Offset(70, 63)]), StrokeInk.ink), // L
-    (_polyline(const [Offset(78, 41), Offset(78, 63)]), StrokeInk.ink), // I
-    (_polyline(const [Offset(85, 41), Offset(101, 63)]), StrokeInk.ink), // X
-    (_polyline(const [Offset(101, 41), Offset(85, 63)]), StrokeInk.ink), // X
-  ];
-  return [
-    for (var i = 0; i < glyphs.length; i++)
-      () {
-        final to = _sample(glyphs[i].$1).map(_w).toList();
-        final fill = glyphs[i].$2 == StrokeInk.slash ? _polygon(_flashPts.map(_w).toList()) : null;
-        return WordStroke(to, _centre(to), i * 40.0, glyphs[i].$2, fill: fill);
-      }(),
-  ];
-}();
+/// D / C L I X, left to right, each blooming from its own dot.
+final List<WordLetter> wordLetters = [
+  for (var i = 0; i < _wordOutlines.length; i++)
+    WordLetter(_shape(_wordOutlines[i].$1).transform(_wordMatrix), i * 40.0, _wordOutlines[i].$2),
+];
 
 /// The finished word in stage units, after it has moved down under the badge.
-final Rect _wordRest = () {
-  final pts = [for (final s in wordStrokes) ...s.to];
-  final box = pts.skip(1).fold(Rect.fromPoints(pts.first, pts.first), (r, p) => r.expandToInclude(Rect.fromPoints(p, p)));
-  return box.inflate(5.5 * _wordScale / 2).translate(0, _wordSlide);
-}();
-final Offset _slashAt = wordStrokes.firstWhere((s) => s.ink == StrokeInk.slash).mid;
+final Rect _wordRest =
+    wordLetters.map((l) => tightBounds(l.fill)).reduce((a, b) => a.expandToInclude(b)).translate(0, _wordSlide);
+final Offset _flashAt = wordLetters.firstWhere((l) => l.ink == LetterInk.flash).mid;
 
 // ---------------------------------------------------------------------------------------
 // Where the Login header draws its logo and "D-CLIX" (see LoginScreen's top row: page
@@ -438,13 +444,13 @@ class IntroPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// Once the word has formed, the slash sends out a ring that settles on the badge.
+  /// Once the word has formed, the flash sends out a ring that settles on the badge.
   void _ring(Canvas canvas, double t) {
     if (t < kIntroWordAt) return;
     final e = Curves.easeOutCubic.transform(_clamp01((t - kIntroWordAt) / (kIntroRevealAt - kIntroWordAt)));
     final fade = 1 - _clamp01((t - kIntroRevealAt - 250) / 200);
     if (fade <= 0) return;
-    canvas.drawCircle(Offset.lerp(_slashAt, _ringCentre, e)!, _lerp(3, _ringR, e),
+    canvas.drawCircle(Offset.lerp(_flashAt, _ringCentre, e)!, _lerp(3, _ringR, e),
         _stroke(colors.primary.withValues(alpha: fade), 3 - .4 * _clamp01((t - kIntroWordAt) / 360)));
   }
 
@@ -468,32 +474,28 @@ class IntroPainter extends CustomPainter {
       ..translate(50, 52)
       ..scale(bounce)
       ..translate(-50, -52);
-    // the first dot, before it splits into one per stroke
+    // the first dot, before it splits into one per letter
     if (t < kIntroSplitAt) {
-      canvas.drawCircle(_dotFrom, _strokeW / 2 * Curves.easeOutBack.transform(_clamp01(t / 200)),
-          Paint()..color = colors.primary);
+      canvas.drawCircle(_dotFrom, _dotR * Curves.easeOutBack.transform(_clamp01(t / 200)), Paint()..color = colors.primary);
     }
-    for (final s in wordStrokes) {
-      final st = s.at(t);
+    for (final l in wordLetters) {
+      final st = l.at(t);
       if (st == null) continue;
-      // the dots take the word's ink as they fly apart; the slash keeps the brand orange
-      final ink = s.ink == StrokeInk.slash
+      // the dots take the word's ink as they fly apart; the flash keeps the brand orange
+      final ink = l.ink == LetterInk.flash
           ? colors.primary
           : Color.lerp(colors.primary, colors.textPrimary, _clamp01((t - kIntroSplitAt) / 150))!;
       if (st.e <= 0) {
-        canvas.drawCircle(st.pts.first, st.width / 2, Paint()..color = ink);
-      } else if (s.fill != null) {
-        // the flash is filled, so it blooms by scaling rather than by moving points
-        canvas
-          ..save()
-          ..translate(st.from.dx, st.from.dy)
-          ..scale(st.e)
-          ..translate(-s.mid.dx, -s.mid.dy)
-          ..drawPath(s.fill!, Paint()..color = ink)
-          ..restore();
-      } else {
-        canvas.drawPath(_polyline(st.pts), _stroke(ink, st.width));
+        canvas.drawCircle(st.from, _dotR, Paint()..color = ink);
+        continue;
       }
+      canvas
+        ..save()
+        ..translate(st.from.dx, st.from.dy)
+        ..scale(st.e)
+        ..translate(-l.mid.dx, -l.mid.dy)
+        ..drawPath(l.fill, Paint()..color = ink)
+        ..restore();
     }
     final a = _clamp01((t - kIntroWordAt - 60) / 300) * fade;
     if (a > 0) {
@@ -505,7 +507,7 @@ class IntroPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, Offset(50 - tp.width / 2, 52 + 11 * _wordScale + 9 - tp.height * .8));
+      tp.paint(canvas, Offset(50 - tp.width / 2, _wordAt.dy + _letterBox.bottom * _place + 8 - tp.height * .2));
     }
     canvas.restore();
   }

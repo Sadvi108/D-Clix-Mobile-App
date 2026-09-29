@@ -35,17 +35,26 @@ Future<void> _advance(WidgetTester tester, int ms) async {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('each stroke blooms from its dot and ends on its glyph', () {
-    expect(wordStrokes, hasLength(8));
-    for (final s in wordStrokes) {
-      expect(s.at(0), isNull, reason: 'only the first dot shows before the split');
-      final dot = s.at(kIntroSplitAt)!;
-      expect(dot.pts.toSet(), hasLength(1), reason: 'it starts as a dot');
-      expect(dot.pts.first, const Offset(50, 52), reason: 'and starts where the first dot popped');
-      expect(s.at(kIntroWordAt)!.pts, s.to);
-      expect(s.to.every((p) => p.dx.isFinite && p.dy.isFinite), isTrue);
+  test('each letter blooms from its dot and lands on the logo lettering', () {
+    expect(wordLetters, hasLength(6), reason: 'D, the flash, C, L, I and X');
+    for (final l in wordLetters) {
+      expect(l.at(0), isNull, reason: 'only the first dot shows before the split');
+      final dot = l.at(kIntroSplitAt)!;
+      expect(dot.e, 0, reason: 'it starts as a dot');
+      expect(dot.from, const Offset(50, 52), reason: 'and starts where the first dot popped');
+      expect(l.at(kIntroWordAt)!.e, 1, reason: 'and is full size by the time the word has formed');
+      expect(l.fill.getBounds().isEmpty, isFalse);
     }
-    expect(wordStrokes.where((s) => s.ink == StrokeInk.slash), hasLength(1));
+    expect(wordLetters.where((l) => l.ink == LetterInk.flash), hasLength(1));
+  });
+
+  test('the word keeps the logo proportions and fits the screen', () {
+    final word = wordLetters.map((l) => tightBounds(l.fill)).reduce((a, b) => a.expandToInclude(b));
+    // the artwork's wordmark is 119.5 wide on a 22 cap height (the C overshoots a little)
+    expect(word.width / word.height, closeTo(119.5 / 22, .4));
+    expect(word.center.dx, closeTo(50, .5), reason: 'centred on the stage');
+    // a phone screen is about 176 stage units across
+    expect(word.width, inInclusiveRange(120, 150), reason: 'fills the screen but keeps a margin');
   });
 
   test('every frame of both exits paints, in both themes', () {
