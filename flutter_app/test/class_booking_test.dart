@@ -165,4 +165,23 @@ void main() {
       expect(sorted, hasLength(2));
     });
   });
+
+  group('minutesOf', () {
+    test('reads the timetable 12-hour and the slot-label 24-hour forms alike', () {
+      expect(minutesOf('20:00'), 20 * 60);
+      expect(minutesOf('8:00 PM'), 20 * 60);
+      expect(minutesOf('8 PM'), 20 * 60);
+      expect(minutesOf('9:30 am'), 9 * 60 + 30);
+    });
+
+    test('noon is 12:00 and midnight is 0:00', () {
+      expect(minutesOf('12:00 PM'), 12 * 60);
+      expect(minutesOf('12:30 AM'), 30);
+    });
+
+    test('no time at all is null, not midnight', () {
+      expect(minutesOf(''), isNull);
+      expect(minutesOf(null), isNull);
+    });
+  });
 }

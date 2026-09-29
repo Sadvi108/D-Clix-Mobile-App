@@ -142,6 +142,49 @@ Map<String, dynamic> bookNowBody({
   };
 }
 
+/// A booking the club has confirmed. Book a Class shows these green; anything else is still
+/// pending or was refused.
+bool isApprovedBooking(Map b) => RegExp('confirm|approv', caseSensitive: false).hasMatch('${b['status'] ?? ''}');
+
+/// Minutes past midnight for "20:00", "8:00 PM" or "8 PM" — the timetable speaks 12-hour,
+/// slot labels 24-hour. Null when there's no time in it.
+int? minutesOf(String? time) {
+  final m = RegExp(r'(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?').firstMatch(time ?? '');
+  if (m == null) return null;
+  var hour = int.parse(m[1]!);
+  final meridiem = m[3]?.toLowerCase();
+  if (meridiem != null) hour = hour % 12 + (meridiem == 'pm' ? 12 : 0);
+  return hour * 60 + int.parse(m[2] ?? '0');
+}
+
+/// Approved bookings on [day], shaped like the Schedule's timetable rows. The times come from
+/// the slot label in `title` ("12:00 To 16:00 (Monday) - Normal training").
+///
+/// Book a Class defaults to the member's own instructor, so booking your regular class is the
+/// common case — one already in [timetable] at the same centre and start time is left out.
+List<Map<String, dynamic>> bookedClassesOn(List<dynamic> bookings, DateTime day, {List<Map> timetable = const []}) {
+  final date = isoDate(day);
+  bool listed(int? start, Object? centre) =>
+      start != null &&
+      timetable.any((r) =>
+          minutesOf('${r['tTimeFrom'] ?? ''}') == start &&
+          '${r['tCenterName'] ?? ''}'.trim().toLowerCase() == '${centre ?? ''}'.trim().toLowerCase());
+
+  final out = <Map<String, dynamic>>[];
+  for (final b in bookings.whereType<Map>()) {
+    if (!isApprovedBooking(b) || !'${b['trainingDate'] ?? ''}'.startsWith(date)) continue;
+    final times = RegExp(r'\d{1,2}:\d{2}').allMatches('${b['title'] ?? ''}').map((m) => m[0]!).toList();
+    if (listed(minutesOf(times.firstOrNull), b['centerName'])) continue;
+    out.add({
+      'tTimeFrom': times.isNotEmpty ? times[0] : '',
+      'tTimeTo': times.length > 1 ? times[1] : '',
+      'tCenterName': b['centerName'],
+      'instructorName': b['instructorName'],
+    });
+  }
+  return out;
+}
+
 /// Bookings ordered for display: upcoming soonest-first, then past most-recent-first.
 List<Map<String, dynamic>> sortBookings(List<dynamic> bookings, {DateTime? now}) {
   final ref = now ?? DateTime.now();

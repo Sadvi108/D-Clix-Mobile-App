@@ -402,7 +402,7 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
                   final t = DateTime.tryParse('${b['trainingDate'] ?? ''}');
                   final past = t != null && t.isBefore(todayDate);
                   final status = '${b['status'] ?? ''}';
-                  final ok = RegExp('confirm|approv', caseSensitive: false).hasMatch(status);
+                  final ok = isApprovedBooking(b);
                   return Opacity(
                     opacity: past ? 0.55 : 1,
                     child: Container(

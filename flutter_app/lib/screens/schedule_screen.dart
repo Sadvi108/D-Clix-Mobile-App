@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../services/class_booking.dart';
 import '../services/live_refresh.dart';
 import '../services/rn_api.dart';
 import '../services/user_session.dart';
@@ -37,6 +38,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   final _range = RnApi.defaultRange();
   late final _details =
       useApi(() => RnApi.studentDetails({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
+  // One-off approved bookings, on top of the weekly timetable above.
+  late final _bookings = useApi(RnApi.getBookings);
   int _active = 0;
 
   // 10 days starting today
@@ -49,6 +52,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   void initState() {
     super.initState();
     _details;
+    _bookings;
   }
 
   @override
@@ -67,8 +71,11 @@ class _ScheduleScreenState extends State<ScheduleScreen>
 
     // Report routes can return the whole branch for a student token — keep own rows only.
     final rows = session.scopedRows(_details.data).whereType<Map>().toList();
-    final classes =
-        rows.where((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase() == selectedDow.toLowerCase()).toList();
+    // Not scopedRows: GetBookings is already the member's own, and a booking's `name` is its
+    // slot label — scopeToSelf would read several labels as several people and hide them all.
+    final bookings = _bookings.data ?? const <Map<String, dynamic>>[];
+    final weekly = rows.where((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase() == selectedDow.toLowerCase()).toList();
+    final classes = [...weekly, ...bookedClassesOn(bookings, selected, timetable: weekly)];
     final trainingDows = rows.map((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase()).toSet();
 
     BoxDecoration cardDeco() => BoxDecoration(
@@ -211,7 +218,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               itemBuilder: (context, i) {
                 final d = _days[i];
                 final on = i == _active;
-                final hasTraining = trainingDows.contains(_dowFullOf(d).toLowerCase());
+                final hasTraining =
+                    trainingDows.contains(_dowFullOf(d).toLowerCase()) || bookedClassesOn(bookings, d).isNotEmpty;
                 return Semantics(
                   selected: on,
                   button: true,
