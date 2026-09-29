@@ -458,6 +458,12 @@ class TabRootBackButton extends StatelessWidget {
   }
 }
 
+/// Bottom space a tab screen must leave for the tab bar: the bar's full height (62 + safe-area
+/// inset). Both tab shells use `Scaffold(extendBody: true)`, which already puts that height into
+/// the body's bottom padding — adding the bar's 62 on top floated the Fees pay bar a whole
+/// bar-height above the tab bar (manual QA 2026-09-29).
+double tabBarClearance(BuildContext context) => MediaQuery.paddingOf(context).bottom;
+
 /// `context.canPop()` asserts when there's no GoRouter in the tree at all — true for a handful
 /// of screen tests that mount a screen standalone to check its data wiring, not its navigation.
 /// Those screens are always inside the app's router in the real app; this just keeps a

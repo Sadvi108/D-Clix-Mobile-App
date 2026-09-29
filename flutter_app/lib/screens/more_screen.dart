@@ -75,7 +75,7 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     // Lives inside the tab shell (see the /more route), so the last row must clear the bar.
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
     return Scaffold(
       backgroundColor: c.background,
       body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

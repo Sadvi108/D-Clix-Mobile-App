@@ -133,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
     String u(String k) => '${user[k] ?? ''}'.trim();
     final isInstructor = session.isInstructor;
     final top = MediaQuery.paddingOf(context).top;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
 
     // A guardian can narrow the app to one sibling; show who is active.
     final name = (session.activeStudentName?.isNotEmpty ?? false) ? session.activeStudentName! : u('name');

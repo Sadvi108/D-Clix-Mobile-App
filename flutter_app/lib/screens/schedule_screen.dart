@@ -63,7 +63,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     final c = context.appColors;
     final session = context.watch<UserSession>();
     final top = MediaQuery.paddingOf(context).top;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
 
     final selected = _days[_active];
     final selectedDow = _dowFullOf(selected);

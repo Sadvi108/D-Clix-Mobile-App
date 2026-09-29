@@ -67,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final session = context.watch<UserSession>();
     final width = MediaQuery.sizeOf(context).width;
     final top = MediaQuery.paddingOf(context).top;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
 
     final user = session.authData ?? const <String, dynamic>{};
     String userField(String k) => '${user[k] ?? ''}'.trim();

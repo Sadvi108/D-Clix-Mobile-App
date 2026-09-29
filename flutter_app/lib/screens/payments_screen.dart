@@ -287,7 +287,7 @@ class _PaymentsScreenState extends State<PaymentsScreen>
     final session = context.watch<UserSession>();
     final user = session.authData ?? const <String, dynamic>{};
     final top = MediaQuery.paddingOf(context).top;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
     final isActive = '${user['status'] ?? ''}'.trim().toLowerCase() != 'inactive';
     final invoices = _dues.data ?? const <Map<String, dynamic>>[];
     final accountId = _accountId;

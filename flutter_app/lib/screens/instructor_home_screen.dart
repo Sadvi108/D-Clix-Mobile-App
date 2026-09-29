@@ -140,7 +140,7 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
     final session = context.watch<UserSession>();
     final user = session.authData ?? const <String, dynamic>{};
     String userField(String k) => '${user[k] ?? ''}'.trim();
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
 
     final dueRows = _dues.data ?? const [];
     final invoiceCount = dueRows.length;

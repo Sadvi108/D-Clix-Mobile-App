@@ -57,7 +57,7 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
     final d = _counts.data ?? const <String, dynamic>{};
     int n(dynamic v) => RnApi.number(v).toInt();
     final types = [

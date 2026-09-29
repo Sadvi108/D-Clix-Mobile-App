@@ -40,7 +40,7 @@ class _TrainingScreenState extends State<TrainingScreen>
     final session = context.watch<UserSession>();
     final user = session.authData ?? const <String, dynamic>{};
     final top = MediaQuery.paddingOf(context).top;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
 
     final records = session.scopedRows(_att.data).whereType<Map>().toList();
     final present =

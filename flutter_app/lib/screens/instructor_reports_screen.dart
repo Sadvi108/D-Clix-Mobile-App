@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/premium_kit.dart';
+import '../widgets/rn_kit.dart' show tabBarClearance;
 
 typedef InstructorReport = ({String id, String label, String group, IconData icon, Color tint, String route});
 
@@ -169,7 +170,7 @@ class _InstructorReportsScreenState extends State<InstructorReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
+    final tabBarHeight = tabBarClearance(context);
     final q = _search.text.trim().toLowerCase();
     final shown =
         q.isEmpty ? kInstructorReports : kInstructorReports.where((r) => r.label.toLowerCase().contains(q)).toList();
