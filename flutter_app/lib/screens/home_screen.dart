@@ -8,6 +8,7 @@ import '../services/rn_api.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
+import '../utils/progress_stats.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/student_switcher.dart';
@@ -653,14 +654,40 @@ class YourInfoCard extends StatelessWidget {
   const YourInfoCard(
       {super.key, required this.info, required this.studentCode, this.activeStudentName = '', this.loading = false});
 
+  static const _months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  static const _tabular = [FontFeature.tabularFigures()];
+
+  /// "Today", "Tomorrow" or "in N days" for a day still ahead; null once it has passed.
+  static String? _countdown(DateTime day) {
+    final now = DateTime.now();
+    final days = (DateTime(day.year, day.month, day.day).difference(DateTime(now.year, now.month, now.day)).inHours / 24)
+        .round();
+    if (days < 0) return null;
+    return switch (days) { 0 => 'Today', 1 => 'Tomorrow', _ => 'in $days days' };
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    // Small accent text: brand orange alone is under 4.5:1 on the light tints, so it goes deeper
+    // in light mode — the same pairing as the FEES DUE label.
+    final accentText = c.isDark ? c.primaryLight : const Color(0xFF9A3412);
+    final iconTint = c.isDark ? c.primaryLight : c.primaryDark;
     final data = info;
     String field(String key) => '${data?[key] ?? ''}'.replaceAll('\r', '').trim();
 
+    TextStyle labelStyle() =>
+        TextStyle(fontSize: 11.5, color: c.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.2);
+    Widget valueText(String value, {double size = 14.5, bool tabular = false}) => Text(value.isEmpty ? '—' : value,
+        style: TextStyle(
+            fontSize: size,
+            color: value.isEmpty ? c.textMuted : c.textPrimary,
+            fontWeight: FontWeight.w800,
+            height: 1.3,
+            fontFeatures: tabular ? _tabular : null));
+
     Widget note(IconData icon, String text) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.only(top: 14),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(icon, size: 18, color: c.textSecondary),
             const SizedBox(width: 10),
@@ -668,25 +695,139 @@ class YourInfoCard extends StatelessWidget {
           ]),
         );
 
-    Widget row((String, String) entry) {
-      final (label, value) = entry;
-      return MergeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+    Widget panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(12)}) => Container(
+          padding: padding,
+          decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.lg)),
+          child: child,
+        );
+
+    Widget idCell(String label, String value) => MergeSemantics(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: labelStyle()),
+            const SizedBox(height: 3),
+            valueText(value, size: 15, tabular: true),
+          ]),
+        );
+
+    Widget detail(IconData icon, String label, String value) => MergeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: c.primary.hexA(c.isDark ? '26' : '14'), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 17, color: iconTint),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(label, style: labelStyle()),
+                  const SizedBox(height: 2),
+                  valueText(value),
+                ]),
+              ),
+            ]),
+          ),
+        );
+
+    Widget statTile(Widget leading, String label, String value) => panel(
+          child: MergeSemantics(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                leading,
+                const SizedBox(width: 7),
+                Expanded(child: Text(label, style: labelStyle())),
+              ]),
+              const SizedBox(height: 6),
+              valueText(value, tabular: true),
+            ]),
+          ),
+        );
+
+    Widget tournament() {
+      final name = field('tournamentName');
+      final start = DateTime.tryParse(field('tournamentDate'));
+      final from = fmtDateGB(data?['tournamentDate']);
+      final to = fmtDateGB(data?['tournamentToDate']);
+      final when = to.isEmpty || to == from ? from : '$from – $to';
+      final countdown = start == null ? null : _countdown(start);
+
+      final chip = Container(
+        width: 50,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: Shadows.soft(c),
+          border: c.isDark ? Border.all(color: c.border) : null,
+        ),
+        child: start == null
+            ? SizedBox(height: 56, child: Icon(Ion.trophyOutline, size: 22, color: iconTint))
+            : Column(children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  decoration: BoxDecoration(gradient: LinearGradient(colors: c.gradient)),
+                  child: Text(_months[start.month - 1],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Text('${start.day}',
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800, color: c.textPrimary, fontFeatures: _tabular)),
+                ),
+              ]),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+              colors: c.gradientSoft, begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(Radii.lg),
+          border: Border.all(color: c.primary.hexA(c.isDark ? '40' : '33')),
+        ),
+        child: MergeSemantics(
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(
-              width: 124,
-              child: Text(label,
-                  style: TextStyle(fontSize: 13, color: c.textSecondary, fontWeight: FontWeight.w600, height: 1.35)),
-            ),
+            chip,
             const SizedBox(width: 12),
             Expanded(
-              child: Text(value.isEmpty ? '—' : value,
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: value.isEmpty ? c.textMuted : c.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Next Tournament',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 0.4, color: accentText)),
+                const SizedBox(height: 3),
+                if (name.isEmpty)
+                  Text('No tournament scheduled yet',
+                      style: TextStyle(fontSize: 14, color: c.textSecondary, fontWeight: FontWeight.w600, height: 1.3))
+                else ...[
+                  Text(name,
+                      style: TextStyle(fontSize: 15, color: c.textPrimary, fontWeight: FontWeight.w800, height: 1.3)),
+                  if (when.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      Text(when,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: c.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: _tabular)),
+                      if (countdown != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: c.gradient), borderRadius: BorderRadius.circular(999)),
+                          child: Text(countdown,
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                        ),
+                    ]),
+                  ],
+                ],
+              ]),
             ),
           ]),
         ),
@@ -695,34 +836,68 @@ class YourInfoCard extends StatelessWidget {
 
     final other = activeStudentName.trim();
     final self = field('name');
-    final Widget body;
+    final List<Widget> body;
     if (other.isNotEmpty && self.isNotEmpty && other.toLowerCase() != self.toLowerCase()) {
-      body = note(Ion.informationCircleOutline,
-          "$other's details aren't available here — the club system only sends the signed-in student's.");
-    } else if (data == null) {
-      body = loading
-          ? note(Ion.timeOutline, 'Loading your details…')
-          : note(Ion.alertCircleOutline, "Couldn't load your details. Pull down to refresh.");
-    } else {
-      final from = fmtDateGB(data['tournamentDate']);
-      final to = fmtDateGB(data['tournamentToDate']);
-      final sections = [
-        [('Registration No', field('registrationNo')), ('Student Code', studentCode.trim())],
-        [
-          ('Training Centre', field('tCenterName')),
-          ('Training Time', field('trainingTme')),
-          ('Exam Center', field('eCenterName')),
-          ('Instructor Name', field('instructorName')),
-        ],
-        [('Current Grade', field('currentGrade')), ('Last Grading Date', fmtDateGB(data['lastGradingDate']))],
-        [('Next Tournament', field('tournamentName')), ('Tournament Date', to.isEmpty || to == from ? from : '$from – $to')],
+      body = [
+        note(Ion.informationCircleOutline,
+            "$other's details aren't available here — the club system only sends the signed-in student's."),
       ];
-      body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        for (final (i, section) in sections.indexed) ...[
-          if (i > 0) Divider(height: 18, thickness: 1, color: c.primary.hexA('40')),
-          ...section.map(row),
-        ],
-      ]);
+    } else if (data == null) {
+      body = [
+        loading
+            ? note(Ion.timeOutline, 'Loading your details…')
+            : note(Ion.alertCircleOutline, "Couldn't load your details. Pull down to refresh."),
+      ];
+    } else {
+      final grade = field('currentGrade');
+      final belt = beltAccent(grade);
+      body = [
+        const SizedBox(height: 16),
+        panel(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(child: idCell('Registration No', field('registrationNo'))),
+              VerticalDivider(width: 24, thickness: 1, color: c.border),
+              Expanded(child: idCell('Student Code', studentCode.trim())),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 8),
+        detail(Ion.locationOutline, 'Training Centre', field('tCenterName')),
+        detail(Ion.timeOutline, 'Training Time', field('trainingTme')),
+        detail(Ion.schoolOutline, 'Exam Center', field('eCenterName')),
+        detail(Ion.personOutline, 'Instructor Name', field('instructorName')),
+        const SizedBox(height: 10),
+        IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(
+              child: statTile(
+                belt == null
+                    ? Icon(Ion.ribbonOutline, size: 15, color: iconTint)
+                    : Container(
+                        width: 20,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: belt.color,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: c.textPrimary.withValues(alpha: 0.12)),
+                        ),
+                      ),
+                'Current Grade',
+                grade,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: statTile(Icon(Ion.calendarOutline, size: 15, color: iconTint), 'Last Grading Date',
+                  fmtDateGB(data['lastGradingDate'])),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        tournament(),
+      ];
     }
 
     return Container(
@@ -730,26 +905,56 @@ class YourInfoCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(Radii.xl),
-        boxShadow: Shadows.soft(c),
-        border: c.isDark ? Border.all(color: c.border) : null,
+        boxShadow: Shadows.card(c),
+        border: Border.all(color: c.isDark ? c.border : c.primary.hexA('1F')),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: c.gradient, begin: Alignment.centerLeft, end: Alignment.centerRight),
-          ),
-          child: Row(children: [
-            const Icon(Ion.idCardOutline, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Semantics(
-              header: true,
-              child: const Text('Your info',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
+      child: Stack(children: [
+        // Soft brand glow behind the header, decoration only — the Fees card's signature.
+        Positioned(
+          right: -50,
+          top: -60,
+          child: IgnorePointer(
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [c.primary.hexA(c.isDark ? '33' : '24'), c.primary.hexA('00')]),
+              ),
             ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: c.gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: c.primary.hexA('55'), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: const Icon(Ion.idCardOutline, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Semantics(
+                    header: true,
+                    child: Text('Your info',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: c.textPrimary)),
+                  ),
+                  const SizedBox(height: 1),
+                  Text('Your club record', style: TextStyle(fontSize: 12, color: c.textSecondary)),
+                ]),
+              ),
+            ]),
+            ...body,
           ]),
         ),
-        Padding(padding: const EdgeInsets.fromLTRB(18, 10, 18, 12), child: body),
       ]),
     );
   }

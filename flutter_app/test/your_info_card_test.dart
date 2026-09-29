@@ -19,6 +19,7 @@ import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/user_session.dart';
 import 'package:dclix_app/theme/app_theme.dart';
 import 'package:dclix_app/theme/theme_provider.dart';
+import 'package:dclix_app/utils/progress_stats.dart';
 
 const _myInfo = {
   'id': 1,
@@ -57,11 +58,31 @@ void main() {
       ('Current Grade', 'Grade 6 (Green 1)'),
       ('Last Grading Date', '08 Aug 2026'),
       ('Next Tournament', 'Sample Open 2026 @ Sample Arena'),
-      ('Tournament Date', '10 Oct 2026'),
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
       expect(find.text(value), findsOneWidget, reason: '$label → $value');
     }
+    expect(find.text('10 Oct 2026'), findsOneWidget, reason: 'the tournament date');
+  });
+
+  testWidgets('an upcoming tournament counts down to its day', (tester) async {
+    final today = DateTime.now();
+    for (final (days, label) in const [(0, 'Today'), (1, 'Tomorrow'), (11, 'in 11 days')]) {
+      final day = DateTime(today.year, today.month, today.day + days);
+      await tester.pumpWidget(_wrap(YourInfoCard(
+          info: {..._myInfo, 'tournamentDate': day.toIso8601String(), 'tournamentToDate': null}, studentCode: '')));
+      expect(find.text(label), findsOneWidget, reason: '$days days out');
+    }
+  });
+
+  testWidgets('the current grade wears its belt colour', (tester) async {
+    await tester.pumpWidget(_wrap(const YourInfoCard(info: _myInfo, studentCode: '')));
+
+    final green = beltAccent('Grade 6 (Green 1)')!.color;
+    expect(
+        find.byWidgetPredicate(
+            (w) => w is Container && w.decoration is BoxDecoration && (w.decoration! as BoxDecoration).color == green),
+        findsOneWidget);
   });
 
   testWidgets('a multi-day tournament shows its date range', (tester) async {
@@ -74,8 +95,9 @@ void main() {
   testWidgets('a missing value shows a dash, never a blank', (tester) async {
     await tester.pumpWidget(_wrap(const YourInfoCard(info: {'name': 'Alex Tan'}, studentCode: '')));
 
+    expect(find.text('—'), findsNWidgets(8));
     expect(find.text('Next Tournament'), findsOneWidget);
-    expect(find.text('—'), findsNWidgets(10));
+    expect(find.text('No tournament scheduled yet'), findsOneWidget);
   });
 
   testWidgets("a guardian viewing another child is not shown this student's details", (tester) async {
