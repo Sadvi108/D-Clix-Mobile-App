@@ -166,6 +166,13 @@ final GoRouter appRouter = GoRouter(
                 s.pageKey,
                 PaymentsScreen(
                     initialTab: s.uri.queryParameters['tab'] ?? 'pay'))),
+        // All Features must live inside this shell: half its tiles open the tab screens
+        // above. Pushed from a page outside the shell, go_router clones a second copy of
+        // this ShellRoute, both copies claim its one navigator key, and a release build
+        // shows a blank body under the tab bar (manual QA 2026-09-29).
+        GoRoute(
+            path: '/more',
+            pageBuilder: (_, s) => _fadeThrough(s.pageKey, const MoreScreen())),
       ],
     ),
     ShellRoute(
@@ -272,9 +279,6 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
         path: '/chat',
         pageBuilder: (_, s) => _fadeThrough(s.pageKey, const ChatScreen())),
-    GoRoute(
-        path: '/more',
-        pageBuilder: (_, s) => _fadeThrough(s.pageKey, const MoreScreen())),
     GoRoute(
         path: '/purchases',
         pageBuilder: (_, s) =>

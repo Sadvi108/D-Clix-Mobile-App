@@ -74,13 +74,15 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    // Lives inside the tab shell (see the /more route), so the last row must clear the bar.
+    final tabBarHeight = 62 + MediaQuery.paddingOf(context).bottom;
     return Scaffold(
       backgroundColor: c.background,
       body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const RnHeader(title: 'All Features'),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, 60),
+            padding: EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl, Gaps.xl, tabBarHeight + 24),
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),

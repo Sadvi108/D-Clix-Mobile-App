@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:dclix_app/screens/home_screen.dart';
-import 'package:dclix_app/screens/more_screen.dart';
 
 void main() {
   testWidgets('a Quick Access tab-route destination stays poppable back to Home', (tester) async {
@@ -39,43 +38,9 @@ void main() {
     expect(ctx.canPop(), isTrue, reason: 'Quick Access must push, not go, so there is a back control');
   });
 
-  testWidgets('Progress Report opened from All Features pops back to All Features, not Home', (tester) async {
-    // Tall enough that the catalogue's Progress section (Training + Payments come first)
-    // is on-screen without scrolling — the ListView is lazy, so an off-screen tile never builds.
-    tester.view.physicalSize = const Size(1080, 3600);
-    tester.view.devicePixelRatio = 3.0;
-    addTearDown(tester.view.reset);
-
-    final router = GoRouter(initialLocation: '/home', routes: [
-      GoRoute(
-        path: '/home',
-        builder: (_, __) => Scaffold(
-          body: Builder(builder: (ctx) => TextButton(onPressed: () => ctx.push('/more'), child: const Text('More'))),
-        ),
-      ),
-      GoRoute(path: '/more', builder: (_, __) => const MoreScreen()),
-      GoRoute(path: '/progress', builder: (_, __) => const Scaffold(body: Text('Progress Screen'))),
-    ]);
-
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
-    await tester.tap(find.text('More'));
-    await tester.pumpAndSettle();
-    expect(find.text('All Features'), findsOneWidget);
-
-    await tester.tap(find.text('Progress Report'));
-    await tester.pumpAndSettle();
-    expect(find.text('Progress Screen'), findsOneWidget);
-
-    // The back chevron calls safeBack(context), which pops when canPop() is true.
-    final ctx = tester.element(find.text('Progress Screen'));
-    expect(ctx.canPop(), isTrue);
-    ctx.pop();
-    await tester.pumpAndSettle();
-
-    expect(find.text('All Features'), findsOneWidget,
-        reason: 'back from Progress Report must return to All Features, not fall through to Home');
-    expect(find.text('More'), findsNothing);
-  });
+  // All Features → tab screens (and back) is covered against the app's real routes in
+  // more_tab_destinations_test.dart. A flat toy router here passed while the real app showed a
+  // blank screen: it had no ShellRoute, and the bug only exists across the shell boundary.
 
   testWidgets('the Quick Access Payment History tile opens Payments on the History tab', (tester) async {
     final router = GoRouter(initialLocation: '/home', routes: [
