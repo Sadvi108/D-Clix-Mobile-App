@@ -254,12 +254,16 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         await notify(context, 'Payment slip required', 'Attach your bank-in slip first.');
         return false;
       }
-      // Bank-in goes through the legacy multipart route, which bills invoice ids only.
+      // Months with no invoice stay online-only: the old app offered bank-in for advance months
+      // only when FetchTranxCharges allowed it (PaymentModePageViewModel.cs:141, 177-181), which
+      // this app does not ask.
       if (payingIds.isEmpty) {
         await notify(context, 'Not available for these months',
             "A bank-in slip can only be submitted against issued invoices. Pay online to settle months your academy hasn't invoiced yet.");
         return false;
       }
+      // The advance months ride along as the term part, as the old app sent them with a slip
+      // too (PaymentModePageViewModel.cs:225-237). A `?PayTermPayments=` query flag is never read.
       final upload = (name: slip.name, bytes: await slip.readAsBytes());
       if (term == null && accountGroups.length > 1) {
         // The endpoint binds a payment to one student even when invoice ids
@@ -280,10 +284,12 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           submittedKeys.addAll(group.map((item) => item.key));
         }
       } else {
-        final result = await ApiService.postMultipart(
-          '/Outstanding/PayInvoices?PayTermPayments=${term != null}&PurchaseItems=false',
-          {'PaymentMethod': '1'},
-          repeatedFields: {'InvoiceIds': payingIds.map((id) => '$id').toList()},
+        final result = await BoostPayment.payInvoices(
+          paymentMethod: 1,
+          invoiceIds: payingIds,
+          term: term == null
+              ? null
+              : TermPayment(studentIds: term.studentIds, year: term.year, months: term.months),
           uploads: [upload],
         );
         final error = apiEnvelopeError(result);
@@ -312,8 +318,8 @@ class _PaymentsScreenState extends State<PaymentsScreen>
     }
   }
 
-  /// `api.startPayment`: prefer /Bcpg, fall back to the legacy online route when the Boost
-  /// routes are missing (404/405). A term selection has no legacy equivalent.
+  /// `api.startPayment`: [BoostPayment.start], falling back to the production host for invoices
+  /// when the Boost host lacks the route (404/405).
   Future<PaymentStart> _startPayment(List<int> invoiceIds, TermPayContext? term) async {
     try {
       return await BoostPayment.start(PaymentIntent(

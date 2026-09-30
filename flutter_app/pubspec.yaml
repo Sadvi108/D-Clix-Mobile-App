@@ -53,6 +53,8 @@ dependencies:
   # Flutter 3.41. 0.10.x is the current line.
   workmanager: ^0.10.3
   http: 1.2.2
+  # MediaType for a multipart part's content type (PayTermPayments is sent as application/json).
+  http_parser: ^4.1.2
 
   # Boost gateway — the checkout page opens in an in-app WebView. The HMAC signing
   # (and the `crypto` dependency it needed) is gone: the backend holds the merchant

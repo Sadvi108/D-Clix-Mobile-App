@@ -74,12 +74,47 @@ void main() {
     await BoostPayment.start(const PaymentIntent(
         purchaseItems: [PurchaseItem(productId: 259, qty: 2, price: 20, totalAmount: 40)]));
     expect(sent.single.url.path, '/Bcpg/PayInvoices');
+    expect(jsonDecode(sent.single.body), containsPair('payTermPayments', null));
   });
 
-  test('advance months still use /Bcpg/PayInvoices', () async {
+  // /Bcpg/PayInvoices answers the same 400 for a term as for invoice ids. The production app
+  // paid advance months on /Outstanding/PayInvoices, the term in a JSON part named
+  // PayTermPayments (OutstandingDataAccess.cs:101-107) — never in the query string.
+  test('advance months pay through /Outstanding/PayInvoices with the term as a JSON part', () async {
+    final start = await BoostPayment.start(const PaymentIntent(
+        invoiceIds: [1000808, 0],
+        term: TermPayment(studentIds: [35842, 35843], year: 2026, months: [10, 11])));
+
+    expect(start.url, _gatewayUrl);
+    final req = sent.single;
+    expect(req.url.path, '/Outstanding/PayInvoices');
+    expect(req.url.query, isEmpty);
+    expect(req.url.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+    final fields = partsOf(req);
+    expect(fields['PaymentMethod'], '2');
+    expect(fields['InvoiceIds'], '1000808');
+    expect(jsonDecode(fields['PayTermPayments'] ?? 'null'), {
+      'StudentIds': [35842, 35843],
+      'Year': 2026,
+      'Months': [10, 11],
+    });
+    expect(
+        req.body,
+        contains('content-type: application/json; charset=utf-8\r\n'
+            'content-disposition: form-data; name="PayTermPayments"\r\n\r\n'));
+  });
+
+  test('months not invoiced yet go on the term alone', () async {
     await BoostPayment.start(const PaymentIntent(
-        term: TermPayment(studentIds: [35842], year: 2026, months: [10])));
-    expect(sent.single.url.path, '/Bcpg/PayInvoices');
+        term: TermPayment(studentIds: [35842], year: 2026, months: [12])));
+    expect(sent.single.url.path, '/Outstanding/PayInvoices');
+    final fields = partsOf(sent.single);
+    expect(fields.containsKey('InvoiceIds'), isFalse);
+    expect(jsonDecode(fields['PayTermPayments'] ?? 'null'), {
+      'StudentIds': [35842],
+      'Year': 2026,
+      'Months': [12],
+    });
   });
 
   group('return leg', () {

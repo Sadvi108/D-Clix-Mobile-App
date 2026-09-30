@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'response_utils.dart';
 import 'api_changes.dart';
 
@@ -316,6 +317,8 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
   ///
   /// [files] attaches uploads under [fileField]; the server names it `files` for
   /// /Profile/UpdateProfile.
+  ///
+  /// [jsonFields] are parts whose value is a JSON document, sent as `application/json`.
   static Future<dynamic> postMultipart(
     String endpoint,
     Map<String, String> fields, {
@@ -323,6 +326,7 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     List<String> files = const [],
     String fileField = 'files',
     Map<String, List<String>> repeatedFields = const {},
+    Map<String, String> jsonFields = const {},
     List<({String name, Uint8List bytes})> uploads = const [],
     bool onBoostHost = false,
   }) async {
@@ -333,7 +337,7 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     // A credential part (UpdateProfile carries NewPassword) is never one of the
     // values worth comparing, so it is masked rather than printed.
     _log('📤 form: ${{
-      for (final e in {...fields, ...repeatedFields}.entries)
+      for (final e in {...fields, ...repeatedFields, ...jsonFields}.entries)
         e.key: _isSecretField(e.key) ? '•••' : e.value
     }}');
     final req = http.MultipartRequest('POST', url);
@@ -351,6 +355,8 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
         req.files.add(http.MultipartFile.fromString(name, value));
       }
     });
+    jsonFields.forEach((name, json) => req.files
+        .add(http.MultipartFile.fromString(name, json, contentType: MediaType('application', 'json'))));
     for (final upload in uploads) {
       req.files.add(http.MultipartFile.fromBytes(fileField, upload.bytes,
           filename: upload.name));

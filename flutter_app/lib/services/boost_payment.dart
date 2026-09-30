@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'api_service.dart';
 import 'response_utils.dart';
@@ -13,7 +15,10 @@ import 'user_session.dart';
 /// backend for a checkout URL.
 ///
 /// Contract (probed live — see docs/ARCHITECTURE.md):
-///   POST /Bcpg/PayInvoices   JSON {invoiceIds, payTermPayments, purchaseItems} -> URL in `data`
+///   POST /Outstanding/PayInvoices  multipart PaymentMethod, InvoiceIds…, PayTermPayments (JSON)
+///                                  -> URL in `data` (invoices and advance months)
+///   POST /Bcpg/PayInvoices         JSON {invoiceIds, payTermPayments, purchaseItems} -> URL
+///                                  in `data` (purchases only)
 ///   GET  /Bcpg/VerifyPayment/{ref}                                   -> bare { status }
 /// `/Bcpg` is not deployed to production, so those calls go to the UAT host, which is the
 /// same database — see [ApiService.boostBaseUrl].
@@ -27,8 +32,12 @@ class TermPayment {
       {required this.studentIds, required this.year, required this.months});
 
   bool get isEmpty => studentIds.isEmpty || months.isEmpty;
+
+  /// The server's own property names, as the production app serialised them (System.Text.Json
+  /// defaults, OutstandingDataAccess.cs:104, OutstandingModel.cs:63-68), so they bind whether or
+  /// not the server matches names case-insensitively.
   Map<String, dynamic> toJson() =>
-      {'studentIds': studentIds, 'year': year, 'months': months};
+      {'StudentIds': studentIds, 'Year': year, 'Months': months};
 }
 
 /// One line of a purchase request — the API's `PurchaseRequestLineViewModel`.
@@ -152,26 +161,19 @@ class BoostPayment {
       );
     }
 
-    // Invoices are paid through the route the backend actually serves for them. `/Bcpg/PayInvoices`
-    // rejects any body carrying invoice ids ("The JSON value could not be converted to
-    // System.String. Path: $.status") and never returns a URL, so dues showed "Payment failed".
-    // `/Outstanding/PayInvoices` with PaymentMethod=2 (FPX) answers with the checkout URL in
-    // `data` — the flow the previous app used and the backend team verified. Advance months and
-    // purchases keep the /Bcpg route: purchases work there, and it is the only route that bills
-    // months with no invoice yet.
-    final res = term == null && purchases.isEmpty
-        ? await ApiService.postMultipart(
-            '/Outstanding/PayInvoices',
-            {'PaymentMethod': '2'},
-            repeatedFields: {'InvoiceIds': invoiceIds.map((id) => '$id').toList()},
-            onBoostHost: true,
-          )
+    // Invoices and advance months are paid through the route the backend actually serves for
+    // them. `/Bcpg/PayInvoices` rejects any body carrying invoice ids or a term ("The JSON value
+    // could not be converted to System.String. Path: $.status") and never returns a URL, so dues
+    // and advance payment showed "Payment failed". `/Outstanding/PayInvoices` with
+    // PaymentMethod=2 (FPX) answers with the checkout URL in `data` — the flow the previous app
+    // used for both (PaymentModePageViewModel.cs:225-237), verified by the backend team for
+    // invoices. Purchases keep the /Bcpg route, which works for them.
+    final res = purchases.isEmpty
+        ? await payInvoices(paymentMethod: 2, invoiceIds: invoiceIds, term: term, onBoostHost: true)
         : await ApiService.post('/Bcpg/PayInvoices', {
             'invoiceIds': invoiceIds,
-            'payTermPayments': term?.toJson(),
-            'purchaseItems': purchases.isEmpty
-                ? null
-                : purchases.map((p) => p.toJson()).toList(),
+            'payTermPayments': null,
+            'purchaseItems': purchases.map((p) => p.toJson()).toList(),
           });
 
     final url = urlFrom(res);
@@ -181,6 +183,27 @@ class BoostPayment {
     }
     return PaymentStart(url: url, referenceId: extractReferenceId(url));
   }
+
+  /// `POST /Outstanding/PayInvoices` in the production app's wire format
+  /// (OutstandingDataAccess.cs:90-107): PaymentMethod, one InvoiceIds part per issued invoice,
+  /// and the advance months as a JSON part named PayTermPayments. Swagger lists PayTermPayments
+  /// outside the form fields as one `in: query` object, Swashbuckle's label for a custom-bound
+  /// property, and every query-string form of it was probed and ignored (commit b0b53b3).
+  static Future<dynamic> payInvoices({
+    required int paymentMethod,
+    List<int> invoiceIds = const [],
+    TermPayment? term,
+    List<({String name, Uint8List bytes})> uploads = const [],
+    bool onBoostHost = false,
+  }) =>
+      ApiService.postMultipart(
+        '/Outstanding/PayInvoices',
+        {'PaymentMethod': '$paymentMethod'},
+        repeatedFields: {'InvoiceIds': [for (final id in invoiceIds) if (id > 0) '$id']},
+        jsonFields: {if (term != null) 'PayTermPayments': jsonEncode(term.toJson())},
+        uploads: uploads,
+        onBoostHost: onBoostHost,
+      );
 
   /// The checkout URL in a `/Bcpg` reply, whichever key the server used.
   static String? urlFrom(dynamic res) {

@@ -67,15 +67,20 @@ copy from `frontend/.env.example` if missing.
 - Auth `POST /Account/Authenticate` (multipart? no — JSON). Bearer token. Student test account (userType 3) — credentials in the team password manager, not here.
 - Payments: `POST /Outstanding/PayInvoices` is **multipart** — `InvoiceIds` (repeated) + `PaymentMethod`
   (2=Online → returns gateway URL; 1=Bank-In → requires `files` slip; **3=Cash, settles the invoice
-  instantly with no payment — don't send it**).
+  instantly with no payment — don't send it**). Advance months go in a **`PayTermPayments` form part**
+  holding JSON `{"StudentIds":[…],"Year":…,"Months":[…]}` (`application/json`), exactly as the old
+  Xamarin app sent it (`OutstandingDataAccess.cs:101-107`). Swagger shows it as `in: query`, but that
+  is Swashbuckle's label for a custom-bound property: every query-string form was probed and ignored.
+  `BoostPayment.payInvoices` builds this request for online and bank-in alike.
 - Boost: `POST /Bcpg/PayInvoices` is **JSON** — `{ invoiceIds, payTermPayments, purchaseItems }` →
   gateway URL in `data` (`https://stage-pay.boostconnect.biz?t=…`; that `t` is a checkout token,
   NOT a `VerifyPayment` reference). Use `api.startPayment(intent)`, which prefers `/Bcpg`, falls
   back to the legacy route on 404 so one build serves both servers, and refuses to mix
   `purchaseItems` with invoices. After the browser returns, `api.confirmPayment()` decides the
   outcome by reconciliation — never assume a payment succeeded.
-  `payTermPayments` in the body is what makes **advance months with no invoice yet** payable
-  (the legacy query flag never did); `purchaseItems` is the only way to raise a purchase request.
+  The app sends only purchases here: a body with invoice ids or `payTermPayments` answers 400
+  (`Path: $.status`), so invoices and advance months use `/Outstanding/PayInvoices` above.
+  `purchaseItems` is the only way to raise a purchase request.
 - Class booking: `TrainingTimeWithDateAndInstructor` returns a **weekly** timetable (the month in
   the path is ignored) and **`classLimit` is capacity, not availability — `0` books fine**, so never
   disable a slot on it. `BookNow` accepts duplicates and a weekday that doesn't match the slot, so
