@@ -165,6 +165,17 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           'A payment is still being confirmed. Check Payment History before paying again.');
       return;
     }
+    // One child per invoice payment. A cart mixing siblings sent every id, yet /Outstanding/PayInvoices
+    // billed one invoice of three (manual QA 2026-09-30). The old app never mixed children: a sibling
+    // was its own session (Account/ChangeStudent, HomePageViewModel.cs:651-697) and dues were paid
+    // from that session's own list (OutstandingPageViewModel.cs:146-152, 203). Checked before the
+    // sheet, so it covers online and Bank-In alike. Advance payment is exempt: it bills siblings
+    // together through the term model, as the old app did (TermPaymentPageViewModel.cs:82-99).
+    if (term == null && _cart.values.map((i) => i.studentId).toSet().length > 1) {
+      notify(context, 'Pay for one child at a time',
+          "Your selection has invoices for more than one child. Pay each child's invoices separately.");
+      return;
+    }
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
