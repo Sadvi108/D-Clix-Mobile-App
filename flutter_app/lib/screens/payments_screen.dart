@@ -680,7 +680,10 @@ class _PaySheet extends StatefulWidget {
 }
 
 class _PaySheetState extends State<_PaySheet> {
-  String _method = 'online';
+  // Online pay is hidden outright when the club has switched it off
+  // (`permissions[1]`), so bank-in is the only method left. Parity review F6.
+  late final bool _onlineAllowed = UserSession.instance.allowOnlinePayment;
+  late String _method = _onlineAllowed ? 'online' : 'bankin';
   XFile? _slip;
   bool _paying = false;
 
@@ -780,8 +783,8 @@ class _PaySheetState extends State<_PaySheet> {
               ),
 
             // Method toggles. The online method is the Boost gateway.
-            for (final m in const [
-              (id: 'online', label: 'Boost (online payment)', icon: Ion.walletOutline),
+            for (final m in [
+              if (_onlineAllowed) (id: 'online', label: 'Boost (online payment)', icon: Ion.walletOutline),
               (id: 'bankin', label: 'Direct Bank-In', icon: Ion.receiptOutline),
             ])
               Padding(

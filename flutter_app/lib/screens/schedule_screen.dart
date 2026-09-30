@@ -274,6 +274,9 @@ class _ScheduleScreenState extends State<ScheduleScreen>
             ),
           ),
         ]),
+        // Hidden when the club has switched class booking off for this account
+        // (the screen behind it refuses anyway). Parity review F6.
+        if (UserSession.instance.allowClassBooking)
         Positioned(
           right: Gaps.xl,
           bottom: tabBarHeight + Gaps.md,

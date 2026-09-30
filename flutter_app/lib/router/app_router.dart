@@ -123,6 +123,27 @@ Set<String> publicPaths({bool developerTools = kDebugMode}) => {
       if (developerTools) '/debug',
     };
 
+/// Routes the club's legacy `permissions` map switches off, guarded centrally
+/// so a deep link, an older tile or a saved shortcut cannot walk around the
+/// hidden entry point. Absent permissions stay allowed; only an explicit false
+/// blocks (old `ReportsPageViewModel.cs:222,241,267,293,303`,
+/// `OutstandingHomePageViewModel.cs:152,178`). Parity review F6.
+String? permissionRedirect(String loc) {
+  final s = UserSession.instance;
+  final denied = switch (loc) {
+    '/instructor/reports/outstanding' => !s.allowViewInvoices,
+    '/instructor/reports/receipt' || '/instructor/reports/payment-slip' => !s.allowViewReceipts,
+    '/instructor/reports/reimbursement' => !s.allowViewReimbursement,
+    '/instructor/reports/contribution' => !s.allowViewContribution,
+    _ when loc.startsWith('/instructor/collections/') => !s.allowViewReceipts,
+    '/book-class' => !s.allowClassBooking,
+    _ => false,
+  };
+  if (!denied) return null;
+  if (loc == '/book-class') return '/schedule';
+  return loc.startsWith('/instructor/collections/') ? '/instructor/collections' : '/instructor/reports';
+}
+
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   observers: [LiveRefreshNavigatorObserver()],
@@ -132,7 +153,7 @@ final GoRouter appRouter = GoRouter(
     if (!UserSession.instance.isLoggedIn) return '/login';
     if (loc.startsWith('/instructor') && !UserSession.instance.isInstructor)
       return '/home';
-    return null;
+    return permissionRedirect(loc);
   },
   routes: [
     GoRoute(path: '/', builder: (_, __) => const SplashScreen()),

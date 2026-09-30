@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../services/api.dart';
 import '../services/response_utils.dart';
 import '../services/rn_api.dart';
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/premium_kit.dart';
@@ -37,7 +38,9 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
 
   /// Recalc all collection counts server-side, then refresh.
   Future<void> _update() async {
-    if (_updating) return;
+    // Guarded here as well as in the UI: the club's UpdateCollection permission
+    // is a server-side deny, not a cosmetic one. Parity review F6.
+    if (_updating || !UserSession.instance.allowUpdateCollection) return;
     setState(() => _updating = true);
     try {
       await Future.wait([1, 2, 3].map((t) async {
@@ -60,6 +63,12 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
     final tabBarHeight = tabBarClearance(context);
     final d = _counts.data ?? const <String, dynamic>{};
     int n(dynamic v) => RnApi.number(v).toInt();
+    // Old app: the three payment-type lists sit behind ViewReceipts(3) and the
+    // recalculation behind UpdateCollection(4)
+    // (`OutstandingHomePageViewModel.cs:152,178`). Absent stays allowed.
+    final session = UserSession.instance;
+    final canSeeLists = session.allowViewReceipts;
+    final canUpdate = session.allowUpdateCollection;
     final types = [
       (
         typeId: 1,
@@ -159,6 +168,7 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
                             ]),
                           ),
                           const SizedBox(width: 12),
+                          if (canUpdate)
                           Semantics(
                             button: true,
                             label: 'Update Collection',
@@ -203,7 +213,8 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
                       padding: const EdgeInsets.fromLTRB(Gaps.xl, 16, Gaps.xl, 0),
                       child: ErrorState(message: _counts.error, onRetry: _counts.reload, compact: true),
                     ),
-                  const SectionLabel('By payment type'),
+                  if (canSeeLists) const SectionLabel('By payment type'),
+                  if (canSeeLists)
                   GroupCard(children: [
                     for (final t in types)
                       PremiumRow(
@@ -218,7 +229,9 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
                   Padding(
                     padding: const EdgeInsets.fromLTRB(Gaps.xl + 4, 14, Gaps.xl + 4, 0),
                     child: Text(
-                        'Update Collection recalculates the counts on the server. Pull down to refresh what is shown.',
+                        canUpdate
+                            ? 'Update Collection recalculates the counts on the server. Pull down to refresh what is shown.'
+                            : 'Pull down to refresh what is shown.',
                         style: TextStyle(fontSize: 12, color: c.textMuted, height: 1.4)),
                   ),
                 ]),

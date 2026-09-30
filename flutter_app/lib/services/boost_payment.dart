@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'api_service.dart';
 import 'response_utils.dart';
+import 'user_session.dart';
 
 /// Boost payment gateway, through the BACKEND's `/Bcpg/*` routes.
 ///
@@ -124,6 +125,16 @@ class BoostPayment {
 
   /// Ask the backend for a checkout URL.
   static Future<PaymentStart> start(PaymentIntent intent) async {
+    // `permissions[1]` (legacy `Permission.EnableOnlinePayment`) is the club's
+    // switch for paying online at all; the old app hid the online method behind
+    // it (`PaymentModePageViewModel.cs:134`). Guarded here because every online
+    // payment — invoices, advance months and purchases — starts on this call.
+    // Parity review F6.
+    if (!UserSession.instance.allowOnlinePayment) {
+      throw const BoostPaymentException(
+        'Your academy has switched off online payment for this account. Pay by direct bank-in instead.',
+      );
+    }
     final invoiceIds = intent.invoiceIds.where((i) => i > 0).toList();
     final term =
         (intent.term != null && !intent.term!.isEmpty) ? intent.term : null;

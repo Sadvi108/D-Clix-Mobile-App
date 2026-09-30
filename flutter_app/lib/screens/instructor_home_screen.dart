@@ -313,7 +313,9 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
             child: ListView(
               padding: EdgeInsets.only(bottom: tabBarHeight + 24),
               children: [
-                dues,
+                // The old home dropped its invoice entries for a non-student
+                // account without ViewInvoices (`HomePageViewModel.cs:459`).
+                if (UserSession.instance.allowViewInvoices) dues,
                 for (final group in const [_classes, _payments]) ...[
                   SectionLabel(group),
                   grid([

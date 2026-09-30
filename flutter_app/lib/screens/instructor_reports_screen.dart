@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/premium_kit.dart';
@@ -144,6 +145,27 @@ const List<InstructorReport> kInstructorReports = [
   ),
 ];
 
+/// The reports the club's legacy `permissions` map allows this account.
+///
+/// Old gates: Outstanding on ViewInvoices(2), Receipt and Payment Slips on
+/// ViewReceipts(3), Reimbursement on ViewReimbursement(5), Contribution on
+/// ViewContribution(6) (`ReportsPageViewModel.cs:222,241,267,293,303`). An
+/// absent permission stays allowed. Parity review F6.
+List<InstructorReport> allowedInstructorReports([UserSession? session]) {
+  final s = session ?? UserSession.instance;
+  const gated = {
+    'outstanding': 2,
+    'receipt': 3,
+    'payment-slip': 3,
+    'reimbursement': 5,
+    'contribution': 6,
+  };
+  return [
+    for (final r in kInstructorReports)
+      if (gated[r.id] == null || s.permissionAllowed(gated[r.id]!)) r,
+  ];
+}
+
 /// Instructor Reports tab: every report, grouped, with a search box.
 class InstructorReportsScreen extends StatefulWidget {
   const InstructorReportsScreen({super.key});
@@ -172,8 +194,8 @@ class _InstructorReportsScreenState extends State<InstructorReportsScreen> {
     final c = context.appColors;
     final tabBarHeight = tabBarClearance(context);
     final q = _search.text.trim().toLowerCase();
-    final shown =
-        q.isEmpty ? kInstructorReports : kInstructorReports.where((r) => r.label.toLowerCase().contains(q)).toList();
+    final allowed = allowedInstructorReports();
+    final shown = q.isEmpty ? allowed : allowed.where((r) => r.label.toLowerCase().contains(q)).toList();
     final groups = <String, List<InstructorReport>>{};
     for (final r in shown) {
       groups.putIfAbsent(r.group, () => []).add(r);
@@ -184,7 +206,7 @@ class _InstructorReportsScreenState extends State<InstructorReportsScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         PremiumHeader(
           title: 'Reports',
-          subtitle: '${kInstructorReports.length} reports for your club',
+          subtitle: '${allowed.length} reports for your club',
           leading: Container(
             width: 44,
             height: 44,
