@@ -8,6 +8,7 @@ import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../utils/progress_stats.dart';
+import '../utils/training_schedule.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/student_switcher.dart';
@@ -38,6 +39,44 @@ const List<QuickTile> kStudentQuickCards = [
 /// (manual QA 2026-09-24, bugs 1 and 2).
 void openRoute(BuildContext context, String route) => context.push(route);
 
+/// Pick the same class row the Schedule tab shows for [day]. When a student
+/// has two classes that day, prefer the row whose venue and time match the
+/// Home summary rather than borrowing another class's trainer.
+Map<String, dynamic>? matchHomeScheduleClass(
+  List<Map<String, dynamic>> rows, {
+  required DateTime day,
+  String trainingText = '',
+  String centerName = '',
+}) {
+  const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  final wantedDay = weekdays[day.weekday - 1].toLowerCase();
+  final candidates = rows.where((row) {
+    final actual = '${row['dayOfWeek'] ?? ''}'.trim().toLowerCase();
+    return actual == wantedDay ||
+        (actual.length >= 3 && wantedDay.startsWith(actual.substring(0, 3))) ||
+        (wantedDay.length >= 3 && actual.startsWith(wantedDay.substring(0, 3)));
+  }).toList();
+  if (candidates.isEmpty) return null;
+
+  String norm(Object? value) => '${value ?? ''}'.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+  final wantedCenter = norm(centerName);
+  final wantedTime = norm(trainingText);
+  final wantedStart = slotStartMinutes(trainingText);
+  int score(Map<String, dynamic> row) {
+    var result = 0;
+    if (wantedCenter.isNotEmpty && norm(row['tCenterName']) == wantedCenter) result += 4;
+    final rowStart = slotStartMinutes(slotLabel(row));
+    if (wantedStart >= 0 && rowStart == wantedStart) result += 3;
+    for (final key in const ['tTimeFrom', 'tTimeTo']) {
+      final value = norm(row[key]);
+      if (value.isNotEmpty && wantedTime.contains(value)) result++;
+    }
+    return result;
+  }
+  candidates.sort((a, b) => score(b).compareTo(score(a)));
+  return candidates.first;
+}
+
 /// Port of `StudentHome` in `frontend/app/(tabs)/home.tsx` (Expo v2.11.1).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -48,12 +87,23 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRefreshMixin<HomeScreen> {
   late final _stats = useApi(RnApi.homePageStats, initial: UserSession.instance.homeStats);
   late final _info = useApi(RnApi.myInfo, initial: UserSession.instance.myInfo);
+  final _range = RnApi.defaultRange();
+  late final _schedule = useApi(() {
+    final session = UserSession.instance;
+    return RnApi.studentDetails({
+      'sourceKeyId': session.currentStudentId,
+      'studentName': session.activeStudentName,
+      'fromDate': _range.fromDate,
+      'toDate': _range.toDate,
+    });
+  });
 
   @override
   void initState() {
     super.initState();
     _stats;
     _info;
+    _schedule;
   }
 
   @override
@@ -96,7 +146,19 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final name = activeName.isNotEmpty ? activeName : (userField('name').isEmpty ? 'Member' : userField('name'));
     final clubName = userField('clubName');
     final tCenterName = '${info?['tCenterName'] ?? ''}';
-    final instructorName = '${info?['instructorName'] ?? ''}';
+    final scheduleRows = session.scopedRows(_schedule.data).whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row)).toList();
+    final homeClass = matchHomeScheduleClass(
+      scheduleRows,
+      day: DateTime.now(),
+      trainingText: trainingFirstLine ?? '',
+      centerName: tCenterName,
+    );
+    // Once the schedule has loaded, a class row is authoritative. Do not put
+    // MyInfo's general/default trainer beside a different class.
+    final instructorName = homeClass == null
+        ? (_schedule.data == null ? '${info?['instructorName'] ?? ''}' : '')
+        : '${homeClass['instructorName'] ?? homeClass['trainerName'] ?? homeClass['trainer'] ?? ''}'.trim();
     // MyInfo has no student code; the login's `code` is it — unless it only repeats the reg no.
     final loginCode = userField('code');
     final selectedCode = '${info?['studentCode'] ?? info?['value'] ?? ''}'.trim();

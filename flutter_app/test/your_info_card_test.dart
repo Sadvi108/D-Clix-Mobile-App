@@ -45,6 +45,28 @@ Widget _wrap(Widget child) => MultiProvider(
     );
 
 void main() {
+  test('Home matches the trainer to the same day, venue and time as Schedule', () {
+    final monday = DateTime(2026, 10, 5);
+    final row = matchHomeScheduleClass([
+      {
+        'dayOfWeek': 'Monday',
+        'tCenterName': 'Other Venue',
+        'tTimeFrom': '18:00',
+        'tTimeTo': '19:00',
+        'instructorName': 'Wrong Trainer',
+      },
+      {
+        'dayOfWeek': 'MON',
+        'tCenterName': 'Student Venue',
+        'tTimeFrom': '20:00',
+        'tTimeTo': '21:00',
+        'instructorName': 'Schedule Trainer',
+      },
+    ], day: monday, trainingText: '20:00 To 21:00 (Monday)', centerName: 'Student Venue');
+
+    expect(row?['instructorName'], 'Schedule Trainer');
+  });
+
   testWidgets('shows every Your info row from MyInfo', (tester) async {
     await tester.pumpWidget(_wrap(const YourInfoCard(info: _myInfo, studentCode: '00000001')));
 
@@ -155,6 +177,53 @@ void main() {
       final card = tester.getTopLeft(find.text('Your info')).dy;
       final today = tester.getTopLeft(find.text("Today's Class")).dy;
       expect(fees < card && card < today, isTrue, reason: 'FEES DUE $fees < Your info $card < Today\'s Class $today');
+    });
+
+    testWidgets("Today's Class uses the trainer from the matching Schedule row", (tester) async {
+      tester.view.physicalSize = const Size(2400, 7200);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      final day = days[DateTime.now().weekday - 1];
+      final info = {
+        ..._myInfo,
+        'trainingTme': '20:00 To 21:00 ($day) - Normal training',
+        'tCenterName': 'Student Venue',
+        'instructorName': 'Default Profile Trainer',
+      };
+      ApiService.client = MockClient((req) async {
+        final data = switch (req.url.path) {
+          '/Profile/MyInfo' => info,
+          '/Reports/StudentDetails' => [
+              {
+                'studentId': 1,
+                'studentName': 'Alex Tan',
+                'dayOfWeek': day,
+                'tCenterName': 'Student Venue',
+                'tTimeFrom': '20:00',
+                'tTimeTo': '21:00',
+                'instructorName': 'Schedule Trainer',
+              },
+            ],
+          _ => null,
+        };
+        return http.Response(jsonEncode({'status': 200, 'data': data}), 200,
+            headers: {'content-type': 'application/json; charset=utf-8'});
+      });
+
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: UserSession.instance),
+          ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ],
+        child: MaterialApp(theme: AppTheme.light(), home: const Scaffold(body: HomeScreen())),
+      ));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(find.text('with Schedule Trainer'), findsOneWidget);
+      expect(find.text('with Default Profile Trainer'), findsNothing);
     });
   });
 }
