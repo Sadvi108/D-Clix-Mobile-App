@@ -114,15 +114,10 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
         PremiumHeader(
           title: 'Collections',
           subtitle: 'Payments received across your club',
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0x2EFFFFFF),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0x33FFFFFF)),
-            ),
-            child: const Icon(Ion.wallet, size: 20, color: Colors.white),
+          leading: HeaderIconButton(
+            icon: Ion.chevronBack,
+            label: 'Back',
+            onTap: () => safeBack(context),
           ),
         ),
         Expanded(

@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:dclix_app/router/app_router.dart';
 import 'package:dclix_app/screens/more_screen.dart';
+import 'package:dclix_app/screens/instructor_collections_screen.dart';
+import 'package:dclix_app/screens/instructor_reports_screen.dart';
 import 'package:dclix_app/screens/payments_screen.dart';
 import 'package:dclix_app/screens/profile_screen.dart';
 import 'package:dclix_app/screens/progress_screen.dart';
@@ -75,6 +77,47 @@ void main() {
     ApiService.client = original;
     UserSession.instance.stopNotificationPolling();
   });
+
+  for (final (label, screen, instructor) in [
+    ('Schedule', ScheduleScreen, false),
+    ('Payments', PaymentsScreen, false),
+    ('Profile', ProfileScreen, false),
+    ('Collections', InstructorCollectionsScreen, true),
+    ('Reports', InstructorReportsScreen, true),
+    ('Settings', ProfileScreen, true),
+  ]) {
+    testWidgets('$label tab has a header back button that returns home', (tester) async {
+      tester.view.physicalSize = const Size(2400, 3600);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      UserSession.instance.authData!['userType'] = instructor ? 0 : 3;
+      final home = instructor ? '/instructor/home' : '/home';
+      final router = GoRouter(initialLocation: home, routes: appRouter.configuration.routes);
+      addTearDown(router.dispose);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: UserSession.instance),
+          ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ],
+        child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+      ));
+      await _settle(tester);
+
+      await tester.tap(find.descendant(of: find.byType(ClubTabBar), matching: find.text(label)));
+      await _settle(tester);
+      expect(find.byType(screen), findsOneWidget);
+      expect(router.canPop(), isFalse);
+      final back = find.descendant(of: find.byType(screen), matching: find.byIcon(Ion.chevronBack)).first;
+      expect(back, findsOneWidget);
+      expect(tester.getCenter(back).dx, lessThan(80));
+      expect(tester.getCenter(back).dy, lessThan(80));
+
+      await tester.tap(back);
+      await _settle(tester);
+      expect(router.routeInformationProvider.value.uri.path, home);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final MapEntry(key: label, value: screen) in _tabTiles.entries) {
     testWidgets('All Features → $label shows $screen, and back returns to All Features', (tester) async {

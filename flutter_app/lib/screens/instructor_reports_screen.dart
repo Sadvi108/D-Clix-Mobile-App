@@ -5,7 +5,7 @@ import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/premium_kit.dart';
-import '../widgets/rn_kit.dart' show tabBarClearance;
+import '../widgets/rn_kit.dart' show safeBack, tabBarClearance;
 
 typedef InstructorReport = ({String id, String label, String group, IconData icon, Color tint, String route});
 
@@ -207,15 +207,10 @@ class _InstructorReportsScreenState extends State<InstructorReportsScreen> {
         PremiumHeader(
           title: 'Reports',
           subtitle: '${allowed.length} reports for your club',
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0x2EFFFFFF),
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0x33FFFFFF)),
-            ),
-            child: const Icon(Ion.documentText, size: 20, color: Colors.white),
+          leading: HeaderIconButton(
+            icon: Ion.chevronBack,
+            label: 'Back',
+            onTap: () => safeBack(context),
           ),
           bottom: Container(
             height: 46,

@@ -441,18 +441,22 @@ class RnCircleButton extends StatelessWidget {
   }
 }
 
-/// Back chevron for a screen that is also a bottom-tab root (Schedule, Payments, Training):
-/// visible only when pushed as a drill-down (`canPopHere`), so the tab-root header stays
-/// pixel-identical to before. Profile's header has its own icon-button style already, so it
-/// gates the same way inline instead of using this widget.
+/// Back chevron for a screen that is also a bottom-tab root (Schedule, Payments, Training).
+/// Returns to the previous screen, or the role's home when opened from the tab bar.
 class TabRootBackButton extends StatelessWidget {
   const TabRootBackButton({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (!canPopHere(context)) return const SizedBox.shrink();
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      RnCircleButton(icon: Ion.chevronBack, onPress: () => safeBack(context)),
+      Semantics(
+        button: true,
+        label: 'Back',
+        // As HeaderIconButton does: the wrapper IS the button, so the
+        // Touchable's own node must not be announced a second time.
+        excludeSemantics: true,
+        child: RnCircleButton(icon: Ion.chevronBack, onPress: () => safeBack(context)),
+      ),
       const SizedBox(width: Gaps.md),
     ]);
   }
@@ -463,12 +467,6 @@ class TabRootBackButton extends StatelessWidget {
 /// the body's bottom padding — adding the bar's 62 on top floated the Fees pay bar a whole
 /// bar-height above the tab bar (manual QA 2026-09-29).
 double tabBarClearance(BuildContext context) => MediaQuery.paddingOf(context).bottom;
-
-/// `context.canPop()` asserts when there's no GoRouter in the tree at all — true for a handful
-/// of screen tests that mount a screen standalone to check its data wiring, not its navigation.
-/// Those screens are always inside the app's router in the real app; this just keeps a
-/// build-time (not tap-time) canPop check from crashing when one isn't there.
-bool canPopHere(BuildContext context) => GoRouter.maybeOf(context)?.canPop() ?? false;
 
 /// `shadow.soft` card with the dark-mode hairline most RN list cards use.
 BoxDecoration rnCard(AppColors c, {double radius = Radii.lg, List<BoxShadow>? shadow, Color? color}) => BoxDecoration(
