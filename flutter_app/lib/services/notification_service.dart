@@ -7,6 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_diff.dart';
 import 'notification_prefs.dart';
 
+/// A notification the member has to answer: the old app showed Accept/Reject
+/// only for `NotificationType == "request"`
+/// (`PushNotificationPageViewModel.cs:110`). Parity review F10.
+bool isRequestNotification(Map n) =>
+    '${n['notificationType'] ?? ''}'.trim().toLowerCase() == 'request';
+
 /// OS notifications for club messages.
 ///
 /// The backend has NO push-token endpoint (confirmed against the live Swagger: 73 routes,
@@ -201,12 +207,17 @@ class NotificationService {
   }
 
   /// Raise one notification. Returns false when preferences or permission suppressed it.
+  ///
+  /// [payload] is what the tap resolves to (see `main.dart`): 'chat' for the
+  /// ordinary club message, 'notifications' for anything the member has to
+  /// answer, so the Accept/Reject controls are reachable from the alert itself.
   static Future<bool> present({
     required String title,
     required String body,
     NotifCategory category = NotifCategory.general,
     int? id,
     bool force = false,
+    String payload = 'chat',
   }) async {
     await init();
     final p = await NotifPrefsStore.load();
@@ -227,7 +238,7 @@ class NotificationService {
         title,
         body,
         details,
-        payload: 'chat',
+        payload: payload,
       );
       return true;
     } catch (e) {
@@ -284,6 +295,8 @@ class NotificationService {
         body: bodyOf(row),
         category: categoryOf(row),
         id: (row['id'] is int) ? row['id'] as int : null,
+        // A request alert has to land where it can be accepted or rejected.
+        payload: isRequestNotification(row) ? 'notifications' : 'chat',
       );
       if (ok) presented++;
     }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../services/api.dart';
 import '../services/notification_service.dart';
+import '../services/response_utils.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
@@ -31,6 +32,10 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final Set<String> _readIds = {};
+  /// Request notifications with an action in flight, and the last failure for
+  /// each — a failed Accept/Reject must stay on screen and stay retryable.
+  final Set<String> _acting = {};
+  final Map<String, String> _actionErrors = {};
   String? _expanded;
   bool _busy = false;
   bool _refreshing = false;
@@ -68,6 +73,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _onTap(Map n) async {
     setState(() => _expanded = _expanded == '${n['id']}' ? null : '${n['id']}');
     if (!_isRead(n)) await _markOne(n);
+  }
+
+  /// Approve or refuse a "request" notification.
+  ///
+  /// Old app: `POST Profile/UpdateNotificationAction {Id, IsApproved}`, buttons
+  /// shown only for `notificationType == "request"`, and the server's own reply
+  /// text is what the member is told
+  /// (`PushNotificationPageViewModel.cs:60-80`). Parity review F10.
+  Future<void> _act(Map n, bool approve) async {
+    final key = '${n['id']}';
+    // Only a request carries a decision, and only a real id can be decided —
+    // checked here as well as in the UI, so no other caller can shortcut it.
+    if (n['id'] == null || !isRequestNotification(n) || _acting.contains(key)) return;
+    setState(() {
+      _acting.add(key);
+      _actionErrors.remove(key);
+    });
+    try {
+      final res = await Api.profileUpdateNotificationAction({'id': n['id'], 'isApproved': approve});
+      final said = unwrapData(res);
+      final msg = said is String ? said.trim() : '';
+      // The old app treated HTTP OK alone as nothing: it required the server's
+      // own reply text before telling the member their answer was recorded
+      // (`PushNotificationPageViewModel.cs:71`). An empty or malformed body
+      // leaves the request in place, retryable.
+      if (msg.isEmpty || msg.toLowerCase() == 'null') {
+        if (mounted) {
+          setState(() => _actionErrors[key] =
+              "Your academy didn't confirm this. Please try again in a moment.");
+        }
+        return;
+      }
+      if (!mounted) return;
+      // The request is gone from the member's list once the club has it; re-read
+      // rather than guessing what the server did with it. A failed action leaves
+      // the row exactly where it was, so it can be tried again.
+      await UserSession.instance.refreshNotifications();
+      if (!mounted) return;
+      setState(() => _expanded = null);
+      await notify(context, approve ? 'Request accepted' : 'Request rejected', msg);
+    } catch (e) {
+      if (mounted) setState(() => _actionErrors[key] = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _acting.remove(key));
+    }
   }
 
   Future<void> _markAll(List<Map> items) async {
@@ -209,6 +259,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   child: Text(type,
                                       style: TextStyle(fontSize: 11, color: c.primary, fontWeight: FontWeight.w700)),
                                 ),
+                              // Only a "request" carries a decision; an
+                              // announcement is read and nothing more.
+                              if (open && isRequestNotification(n)) ...[
+                                if (_actionErrors['${n['id']}'] != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(_actionErrors['${n['id']}']!,
+                                        style: TextStyle(fontSize: 12, color: c.danger)),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: Row(children: [
+                                    for (final a in [
+                                      (label: 'Accept', approve: true, color: c.success),
+                                      (label: 'Reject', approve: false, color: c.danger),
+                                    ])
+                                      Padding(
+                                        padding: EdgeInsets.only(right: a.approve ? 10 : 0),
+                                        child: Touchable(
+                                          onPress: _acting.contains('${n['id']}')
+                                              ? null
+                                              : () => _act(n, a.approve),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                                            decoration: BoxDecoration(
+                                              color: a.color.hexA('1F'),
+                                              borderRadius: BorderRadius.circular(Radii.md),
+                                              border: Border.all(color: a.color.hexA('66')),
+                                            ),
+                                            child: Text(a.label,
+                                                style: TextStyle(
+                                                    fontSize: 13, fontWeight: FontWeight.w800, color: a.color)),
+                                          ),
+                                        ),
+                                      ),
+                                  ]),
+                                ),
+                              ],
                             ]),
                           ),
                           if (!read) ...[

@@ -66,7 +66,12 @@ class _DClixAppState extends State<DClixApp> {
       if (!mounted || !session.isLoggedIn || session.loading) return;
       final payload = _pendingNotification;
       _pendingNotification = null;
-      appRouter.push(payload == 'autopay' ? '/autopay' : '/chat');
+      appRouter.push(switch (payload) {
+        'autopay' => '/autopay',
+        // A request alert must open the list that carries Accept/Reject.
+        'notifications' => '/notifications',
+        _ => '/chat',
+      });
     });
   }
 
