@@ -124,7 +124,14 @@ const _expectedServices = <String, List<String>>{
   ],
   'payments_screen': ['BoostPayment.start', 'BoostPayment.confirm'],
   'term_payment_screen': ['BoostPayment.start', 'BoostPayment.confirm'],
-  'autopay_screen': ['AutoPay.status', 'AutoPay.setup', 'AutoPay.cancel'],
+  'autopay_screen': [
+    'AutoPay.status',
+    'AutoPay.setup',
+    'AutoPay.cancel',
+    'AutoPay.pause',
+    'AutoPay.resume',
+    'AutoPay.family',
+  ],
   'notification_settings_screen': ['NotificationService.sendTestAlert'],
 };
 

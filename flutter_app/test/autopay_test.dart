@@ -54,6 +54,23 @@ void main() {
       expect((await AutoPay.status()).state, AutoPayState.off);
     });
 
+    test('paused reads as paused, and the monthly amount comes through', () async {
+      ApiService.client = MockClient((_) async => _json(_ok({
+            'enabled': true,
+            'paused': true,
+            'cardLast4': '5000',
+            'monthlyAmount': 170,
+          })));
+      final m = await AutoPay.status();
+      expect(m.state, AutoPayState.paused);
+      expect(m.monthlyAmount, 170);
+    });
+
+    test('paused without enabled is still off', () async {
+      ApiService.client = MockClient((_) async => _json(_ok({'enabled': false, 'paused': true})));
+      expect((await AutoPay.status()).state, AutoPayState.off);
+    });
+
     test('a reply without `enabled` is off, never active', () async {
       ApiService.client = MockClient((_) async => _json(_ok({'cardLast4': '4242'})));
       expect((await AutoPay.status()).state, AutoPayState.off);
@@ -87,6 +104,16 @@ void main() {
       expect(start.url, 'https://stage-pay.boostconnect.biz?t=abc');
     });
 
+    test('Enable carries the monthly amount and every family member', () async {
+      Object? body;
+      ApiService.client = MockClient((req) async {
+        body = jsonDecode(req.body);
+        return _json(_ok('https://stage-pay.boostconnect.biz?t=abc'));
+      });
+      await AutoPay.setup(monthlyAmount: 170, studentIds: [11, 12]);
+      expect(body, {'monthlyAmount': 170, 'studentIds': [11, 12]});
+    });
+
     test('no URL back is an error, never a blank page', () async {
       ApiService.client = MockClient((_) async => _json(_ok('')));
       expect(AutoPay.setup(), throwsA(anything));
@@ -112,5 +139,32 @@ void main() {
     expect(method, 'POST');
     expect(url!.path, '/AutoPay/Disable');
     expect(url!.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+  });
+
+  group('pause and resume', () {
+    for (final (name, call, path) in [
+      ('pause', AutoPay.pause, '/AutoPay/Pause'),
+      ('resume', AutoPay.resume, '/AutoPay/Resume'),
+    ]) {
+      test('$name posts to $path on the Boost host', () async {
+        Uri? url;
+        ApiService.client = MockClient((req) async {
+          url = req.url;
+          return _json(_ok(null));
+        });
+        await call();
+        expect(url!.path, path);
+        expect(url!.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+      });
+
+      test('$name not deployed says so, and does not claim Auto Pay is off', () async {
+        ApiService.client = MockClient((_) async => http.Response('', 404));
+        expect(
+            call(),
+            throwsA(predicate((e) =>
+                e.toString().contains('not available yet') &&
+                !e.toString().contains('not open yet'))));
+      });
+    }
   });
 }

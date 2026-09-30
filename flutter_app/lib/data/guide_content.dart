@@ -181,20 +181,20 @@ const kGuideSteps = <GuideStep>[
     icon: AppIcons.autorenew,
     title: 'Auto Pay',
     intro:
-        'Save a debit or credit card once, and your pending invoices are paid from it for you.',
+        'Save a debit or credit card once, set how much to take each month, and your pending invoices are paid from it for you.',
     details: [
       GuideDetail(1, 'Turn it on',
-          'Flip the Auto Pay switch. You are taken to Boost\'s secure page to enter your card. D-CLIX never sees your card number.'),
-      GuideDetail(2, 'The card check',
-          'Boost verifies the card with a RM 1.00 hold that is voided straight away, not charged. Your bank may show it briefly.'),
-      GuideDetail(3, 'Confirming',
-          'Auto Pay may show Pending for a moment while Boost confirms the card. Nothing is charged until it is confirmed.'),
+          'Flip the Auto Pay switch and enter the amount to take from your card each month. If more than one member of your family trains at the academy, everyone is covered together.'),
+      GuideDetail(2, 'Save your card on Boost',
+          'You are taken to Boost\'s secure page to enter your card and confirm it with the OTP from your bank. D-CLIX never sees your card number. Boost checks the card with a RM 1.00 hold that is voided, not charged.'),
+      GuideDetail(3, 'Pause and resume',
+          'Going away, or paying another way for a while? Tap Pause. Your card stays saved and nothing is taken until you tap Resume.'),
       GuideDetail(4, 'After that',
           'The club pays your pending invoices from the saved card, and each receipt appears in Payment History.'),
     ],
     tips: [
       'Tap your card on the Auto Pay screen to save a different one.',
-      'Turn Auto Pay off to unlink the card. After that you pay from Fees Due as before.',
+      'Tap Disable to turn Auto Pay off and remove the card. After that you pay from Fees Due as before.',
     ],
     note:
         'If a payment fails, Auto Pay shows Action needed. Update your card there, and check Fees Due for anything still owed.',

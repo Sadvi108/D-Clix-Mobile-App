@@ -166,12 +166,15 @@ void main() {
     // Manual attendance reads the route table itself and only calls its proposed route once
     // the server lists it (docs/specs/2026-09-15-manual-attendance.md).
     const manualAttendance = {'/swagger/v1/swagger.json', '/Attendance/MarkByInstructor'};
+    // Auto Pay's pause / resume, built ahead of the server; a 404 says "not available yet".
+    const autoPayProposed = {'/AutoPay/Pause', '/AutoPay/Resume'};
     final missing = calls
         .where((c) =>
             resolve(c.path, routes.keys) == null &&
             !(c.file == 'online_submissions.dart' &&
                 proposed.contains(normalise(c.path))) &&
-            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))))
+            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))) &&
+            !(c.file == 'autopay.dart' && autoPayProposed.contains(normalise(c.path))))
         .toList();
     expect(missing, isEmpty,
         reason:
