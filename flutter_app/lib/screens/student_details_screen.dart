@@ -29,15 +29,19 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> with UseApi
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final user = context.watch<UserSession>().authData ?? const <String, dynamic>{};
-    final info = _info.data ?? const <String, dynamic>{};
-    final extra = _addtnl.data ?? const <String, dynamic>{};
-    final loading = _info.loading || _addtnl.loading;
+    final session = context.watch<UserSession>();
+    final hasSelectedStudent = session.activeStudentName?.trim().isNotEmpty ?? false;
+    final user = hasSelectedStudent ? const <String, dynamic>{}
+        : session.authData ?? const <String, dynamic>{};
+    final info = (hasSelectedStudent ? session.activeStudentInfo : _info.data) ?? const <String, dynamic>{};
+    final extra = hasSelectedStudent ? const <String, dynamic>{}
+        : _addtnl.data ?? const <String, dynamic>{};
+    final loading = hasSelectedStudent ? session.activeStudentInfoLoading : _info.loading || _addtnl.loading;
     String v(dynamic x) => '${x ?? ''}'.trim();
     String or(List<dynamic> xs) => xs.map(v).firstWhere((s) => s.isNotEmpty, orElse: () => '—');
 
     final fields = [
-      (icon: Ion.personOutline, label: 'Name', value: or([user['name'], info['name']])),
+      (icon: Ion.personOutline, label: 'Name', value: or([info['name'], user['name']])),
       (icon: Ion.cardOutline, label: 'Registration No', value: or([info['registrationNo'], user['code']])),
       (icon: Ion.fingerPrintOutline, label: 'IC No', value: or([user['icNo']])),
       (icon: Ion.ribbonOutline, label: 'Current Grade', value: or([info['currentGrade'], user['currentGrade']])),
@@ -61,14 +65,20 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> with UseApi
             children: [
               if (loading) const RnSpinner(vertical: 30),
               // Nothing cached and the fetch failed: say so rather than a card of dashes.
-              if (!loading && _info.data == null && _info.error != null)
+              if (!loading && ((hasSelectedStudent && session.activeStudentInfo == null) ||
+                  (!hasSelectedStudent && _info.data == null && _info.error != null)))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: ErrorState(
-                      message: 'Could not load your details. ${_info.error}',
+                      message: 'Could not load your details. ${hasSelectedStudent ? session.activeStudentInfoError ?? '' : _info.error}',
                       onRetry: () {
-                        _info.reload();
-                        _addtnl.reload();
+                        if (hasSelectedStudent) {
+                          session.switchStudent(session.activeStudentId ?? 0,
+                              studentName: session.activeStudentName);
+                        } else {
+                          _info.reload();
+                          _addtnl.reload();
+                        }
                       }),
                 ),
               if (!loading)

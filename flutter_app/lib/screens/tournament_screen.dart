@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../services/api.dart';
 import '../services/response_utils.dart';
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/rn_kit.dart';
@@ -99,8 +101,12 @@ class TournamentScreen extends StatefulWidget {
 
 class _TournamentScreenState extends State<TournamentScreen> with UseApi<TournamentScreen> {
   // No reportType: the route casts it to int and 400s on a word.
-  late final _data =
-      useApi(() async => parseTournaments(await Api.reportsTournamentSummary({'fromDate': null, 'toDate': null})));
+  late final _data = useApi(() async => parseTournaments(await Api.reportsTournamentSummary({
+        'sourceKeyId': UserSession.instance.currentStudentId,
+        'fromDate': null,
+        'toDate': null,
+        'reportType': null,
+      })));
   String _selectedName = '';
 
   @override
@@ -112,6 +118,8 @@ class _TournamentScreenState extends State<TournamentScreen> with UseApi<Tournam
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    // Causes UseApi to observe a selected-student epoch and refetch.
+    context.watch<UserSession>();
     final all = _data.data ?? const <TournamentRow>[];
     final names = tournamentNames(all);
     final rows = _selectedName.isEmpty ? all : all.where((r) => r.name == _selectedName).toList();

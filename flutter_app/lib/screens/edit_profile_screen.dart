@@ -16,6 +16,28 @@ import '../widgets/rn_kit.dart';
 
 int _intOf(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
 
+/// Accept international phone numbers with common display separators.
+String? validateProfilePhone(String raw) {
+  final value = raw.trim();
+  // Some legacy records have no phone. Keep that optional, but reject a
+  // malformed value once one is entered.
+  if (value.isEmpty) return null;
+  if (!RegExp(r'^\+?[0-9 ()-]+$').hasMatch(value) || value.substring(1).contains('+')) {
+    return 'Use digits with an optional +, spaces, dashes or parentheses.';
+  }
+  final digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.length < 7 || digits.length > 15) {
+    return 'Enter a valid mobile number with 7 to 15 digits.';
+  }
+  return null;
+}
+
+String normalizeProfilePhone(String raw) {
+  final value = raw.trim();
+  final digits = value.replaceAll(RegExp(r'\D'), '');
+  return value.startsWith('+') ? '+$digits' : digits;
+}
+
 /// Port of `frontend/app/edit-profile.tsx` (Expo v2.11.1).
 ///
 /// Writes through `/Profile/UpdateProfile` (multipart), which expects the identity fields
@@ -86,6 +108,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   XFile? _picked;
   Uint8List? _pickedBytes;
   bool _saving = false;
+  String? _phoneError;
 
   Map<String, dynamic> get _user => UserSession.instance.authData ?? const <String, dynamic>{};
   String _u(String k) => '${_user[k] ?? ''}'.trim();
@@ -288,6 +311,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await notify(context, 'Name required', 'Please enter your name.');
       return;
     }
+    final phoneError = validateProfilePhone(_phone.text);
+    if (phoneError != null) {
+      setState(() => _phoneError = phoneError);
+      return;
+    }
+    final phone = normalizeProfilePhone(_phone.text);
     final newPwd = _newPwd.text;
     if (newPwd.isNotEmpty && newPwd != _confirmPwd.text) {
       await notify(context, 'Passwords do not match', 'Type the same new password in both boxes.');
@@ -303,7 +332,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'IcNo': s.isInstructor ? _u('icNo') : _ic.text.trim(),
       'Name': name,
       'EmailAddress': _email.text.trim(),
-      'HandPhone': _phone.text.trim(),
+      'HandPhone': phone,
       'Gender': _gender,
       'Address1': _address.text,
       'Address2': _u('address2'),
@@ -355,7 +384,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await s.updateUser({
         'name': name,
         'emailAddress': _email.text.trim(),
-        'handPhone': _phone.text.trim(),
+        'handPhone': phone,
         if (!s.isInstructor) 'icNo': _ic.text.trim(),
         'gender': _gender,
         'address1': _address.text,
@@ -409,16 +438,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         );
 
     Widget field(String l, TextEditingController ctrl, IconData icon,
-        {TextInputType? keyboard, bool multiline = false, bool obscure = false}) {
+        {TextInputType? keyboard, bool multiline = false, bool obscure = false,
+        String? error, ValueChanged<String>? onChanged}) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         label(l),
         Container(
-          margin: const EdgeInsets.only(bottom: 14),
+          margin: EdgeInsets.only(bottom: error == null ? 14 : 5),
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: c.surface,
             borderRadius: BorderRadius.circular(Radii.md),
-            border: Border.all(color: c.border),
+            border: Border.all(color: error == null ? c.border : c.danger),
           ),
           child: Row(crossAxisAlignment: multiline ? CrossAxisAlignment.start : CrossAxisAlignment.center, children: [
             Padding(
@@ -431,6 +461,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 height: multiline ? 70 : null,
                 child: TextField(
                   controller: ctrl,
+                  onChanged: onChanged,
                   obscureText: obscure,
                   autocorrect: !obscure,
                   enableSuggestions: !obscure,
@@ -458,6 +489,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ]),
         ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 14),
+            child: Text(error, style: TextStyle(fontSize: 12, color: c.danger, fontWeight: FontWeight.w600)),
+          ),
       ]);
     }
 
@@ -550,7 +586,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               field('Name', _name, Ion.personOutline),
               field('Email', _email, Ion.mailOutline, keyboard: TextInputType.emailAddress),
-              field('Mobile No', _phone, Ion.callOutline, keyboard: TextInputType.phone),
+              field('Mobile No', _phone, Ion.callOutline,
+                  keyboard: TextInputType.phone,
+                  error: _phoneError,
+                  onChanged: (_) {
+                    if (_phoneError != null) setState(() => _phoneError = validateProfilePhone(_phone.text));
+                  }),
               if (!session.isInstructor) field('IC No', _ic, Ion.idCardOutline),
               label('Gender'),
               Padding(

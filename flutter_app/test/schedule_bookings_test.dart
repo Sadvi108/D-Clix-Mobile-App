@@ -127,4 +127,35 @@ void main() {
         w is Container && w.constraints == const BoxConstraints.tightFor(width: 5, height: 5));
     expect(dots, findsOneWidget);
   });
+
+  testWidgets('changing the selected student refetches that student schedule', (tester) async {
+    final requestedStudents = <int>[];
+    ApiService.client = MockClient((req) async {
+      if (req.url.path == '/Reports/StudentDetails') {
+        final body = jsonDecode(req.body) as Map<String, dynamic>;
+        final id = body['sourceKeyId'] as int;
+        requestedStudents.add(id);
+        return _ok([{
+          'studentId': id,
+          'studentName': id == 11 ? 'Child A' : 'Child B',
+          'dayOfWeek': DateFormat('EEEE').format(today),
+          'tCenterName': id == 11 ? 'Centre A' : 'Centre B',
+          'tTimeFrom': '18:00',
+          'tTimeTo': '19:00',
+        }]);
+      }
+      return _ok([]);
+    });
+    final session = UserSession.instance;
+    session.setActiveStudent(name: 'Child A', id: 11);
+    addTearDown(() => session.setActiveStudent(name: null, id: null));
+    await tester.pumpWidget(_wrap(const ScheduleScreen()));
+    await _settle(tester);
+    expect(find.text('Centre A'), findsOneWidget);
+    session.setActiveStudent(name: 'Child B', id: 22);
+    await _settle(tester);
+    expect(find.text('Centre B'), findsOneWidget);
+    expect(find.text('Centre A'), findsNothing);
+    expect(requestedStudents, containsAllInOrder([11, 22]));
+  });
 }

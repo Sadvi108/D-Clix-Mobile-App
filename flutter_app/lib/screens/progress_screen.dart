@@ -45,6 +45,7 @@ class _ProgressScreenState extends State<ProgressScreen> with UseApi<ProgressScr
     final today = DateTime(now.year, now.month, now.day);
     _fetchStart = progressFetchStart(today);
     return RnApi.attendanceReport({
+      'sourceKeyId': UserSession.instance.currentStudentId,
       'fromDate': _fetchStart.toIso8601String(),
       'toDate': DateTime(today.year, today.month, today.day, 23, 59, 59).toIso8601String(),
     });

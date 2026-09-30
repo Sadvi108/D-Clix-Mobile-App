@@ -47,11 +47,14 @@ class _BeltRankScreenState extends State<BeltRankScreen> with UseApi<BeltRankScr
     // MyInfo always describes the token's own student. A successful response is the truth,
     // even with an empty grade; the session cache stands in only while that request is
     // pending or failed, and never for a sibling.
-    final fetched = _info.data;
+    final fetched = isSibling ? session.activeStudentInfo : _info.data;
     Map<String, dynamic>? info;
     if (fetched != null) {
       final who = StudentIdentity(name: '${fetched['name'] ?? ''}', ic: '${fetched['icNo'] ?? ''}');
-      if (!isSibling || who.sameAs(selected)) info = fetched;
+      if (!isSibling || who.sameAs(selected) ||
+          '${fetched['studentId'] ?? fetched['id'] ?? ''}' == '${session.activeStudentId}') {
+        info = fetched;
+      }
     } else if (!isSibling) {
       info = session.myInfo;
     }
@@ -63,7 +66,7 @@ class _BeltRankScreenState extends State<BeltRankScreen> with UseApi<BeltRankScr
       const SizedBox(height: 14),
     ];
 
-    if (isSibling && info == null && fetched != null) {
+    if (isSibling && info == null && !session.activeStudentInfoLoading) {
       children.add(_note(c, Ion.informationCircleOutline,
           "A grade isn't available for ${session.displayName} here. Contact your academy to confirm their rank."));
     } else if (info == null && _info.loading) {

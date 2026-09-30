@@ -97,6 +97,13 @@ void main() {
 
   Finder input(String hint) => find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == hint);
 
+  test('phone validation accepts common formatting but rejects malformed numbers', () {
+    expect(validateProfilePhone('+60 (12) 345-6789'), isNull);
+    expect(normalizeProfilePhone('+60 (12) 345-6789'), '+60123456789');
+    expect(validateProfilePhone('12-ABC-789'), isNotNull);
+    expect(validateProfilePhone('12345'), isNotNull);
+  });
+
   testWidgets('loaded extras are sent back untouched', (tester) async {
     await open(tester);
     await save(tester);
@@ -113,6 +120,24 @@ void main() {
 
     expect(partsOf(writes.single)['IcNo'], 'NEW-IC-99');
     expect(session.authData?['icNo'], 'NEW-IC-99');
+  });
+
+  testWidgets('an invalid mobile number shows an inline error and is not saved', (tester) async {
+    await open(tester);
+    await tester.ensureVisible(input('Mobile No'));
+    await tester.enterText(input('Mobile No'), '012-ABC');
+    await save(tester);
+    expect(writes, isEmpty);
+    expect(find.textContaining('optional +'), findsOneWidget);
+  });
+
+  testWidgets('a formatted mobile number is normalized before saving', (tester) async {
+    await open(tester);
+    await tester.ensureVisible(input('Mobile No'));
+    await tester.enterText(input('Mobile No'), '+60 (12) 345-6789');
+    await save(tester);
+    expect(partsOf(writes.single)['HandPhone'], '+60123456789');
+    expect(session.authData?['handPhone'], '+60123456789');
   });
 
   testWidgets('a field the member cleared is sent empty, not dropped', (tester) async {

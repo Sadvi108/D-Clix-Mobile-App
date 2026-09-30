@@ -71,13 +71,15 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final user = session.authData ?? const <String, dynamic>{};
     String userField(String k) => '${user[k] ?? ''}'.trim();
     final stats = _stats.data;
-    final info = _info.data;
+    final hasSelectedStudent = session.activeStudentName?.trim().isNotEmpty ?? false;
+    final info = hasSelectedStudent ? session.activeStudentInfo : _info.data;
+    final infoLoading = hasSelectedStudent ? session.activeStudentInfoLoading : _info.loading;
 
     final statsLoading = _stats.loading && stats == null;
     final statsFailed = _stats.error != null && stats == null;
     final gradeRaw = '${info?['currentGrade'] ?? ''}'.isNotEmpty
         ? '${info!['currentGrade']}'
-        : (userField('currentGrade').isNotEmpty ? userField('currentGrade') : '—');
+        : (!hasSelectedStudent && userField('currentGrade').isNotEmpty ? userField('currentGrade') : '—');
     final grade = gradeRaw.replaceFirst(RegExp(r'Grade\s*', caseSensitive: false), '');
     final beltShort = grade.split(' ').first;
     final num dueAmount = RnApi.number(stats?['dueAmount']);
@@ -97,7 +99,10 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final instructorName = '${info?['instructorName'] ?? ''}';
     // MyInfo has no student code; the login's `code` is it — unless it only repeats the reg no.
     final loginCode = userField('code');
-    final studentCode = loginCode == '${info?['registrationNo'] ?? ''}'.trim() ? '' : loginCode;
+    final selectedCode = '${info?['studentCode'] ?? info?['value'] ?? ''}'.trim();
+    final studentCode = hasSelectedStudent
+        ? selectedCode
+        : (loginCode == '${info?['registrationNo'] ?? ''}'.trim() ? '' : loginCode);
 
     const white85 = Color(0xD9FFFFFF);
 
@@ -493,7 +498,7 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                     info: info,
                     studentCode: studentCode,
                     activeStudentName: activeName,
-                    loading: _info.loading,
+                    loading: infoLoading,
                   ),
                 ),
 
@@ -518,7 +523,7 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(trainingFirstLine ?? (_info.loading ? 'Loading…' : 'No training time set'),
+                            Text(trainingFirstLine ?? (infoLoading ? 'Loading…' : 'No training time set'),
                                 style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 2),
                             Text(tCenterName.isEmpty ? 'Training Center' : tCenterName,
@@ -666,6 +671,7 @@ class YourInfoCard extends StatelessWidget {
 
     Widget tournament() {
       final name = field('tournamentName');
+      final status = field('tournamentStatus');
       final start = DateTime.tryParse(field('tournamentDate'));
       final from = fmtDateGB(data?['tournamentDate']);
       final to = fmtDateGB(data?['tournamentToDate']);
@@ -725,6 +731,10 @@ class YourInfoCard extends StatelessWidget {
                 else ...[
                   Text(name,
                       style: TextStyle(fontSize: 15, color: c.textPrimary, fontWeight: FontWeight.w800, height: 1.3)),
+                  if (status.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(status, style: TextStyle(fontSize: 12, color: accentText, fontWeight: FontWeight.w800)),
+                  ],
                   if (when.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
@@ -813,6 +823,11 @@ class YourInfoCard extends StatelessWidget {
             ),
           ]),
         ),
+        if (field('gradingStatus').isNotEmpty || field('gradingPaymentStatus').isNotEmpty) ...[
+          const SizedBox(height: 4),
+          detail(Ion.checkmarkCircleOutline, 'Grading Status',
+              field('gradingStatus').isNotEmpty ? field('gradingStatus') : field('gradingPaymentStatus')),
+        ],
         const SizedBox(height: 10),
         tournament(),
       ];

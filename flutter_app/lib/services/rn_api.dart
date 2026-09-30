@@ -96,6 +96,97 @@ class RnApi {
       _rows(await _report('/Reports/PurchaseRequests', body));
   static Future<List<Map<String, dynamic>>> studentDetails(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/StudentDetails', body));
+
+  /// `/Profile/MyInfo` stays bound to the primary login. Build a guardian-
+  /// selected child's snapshot from report routes that accept `sourceKeyId`.
+  static Future<Map<String, dynamic>> studentOverview({
+    required Object studentId,
+    required String studentName,
+    Map<String, dynamic>? seed,
+  }) async {
+    final range = defaultRange();
+    Future<List<Map<String, dynamic>>> safe(Future<List<Map<String, dynamic>>> Function() load) async {
+      try { return await load(); } catch (_) { return const []; }
+    }
+    final results = await Future.wait([
+      safe(() => studentDetails({'sourceKeyId': studentId, 'studentName': studentName,
+        'fromDate': range.fromDate, 'toDate': range.toDate})),
+      safe(() => gradingSchedule({'sourceKeyId': studentId,
+        'fromDate': range.fromDate, 'toDate': range.toDate})),
+      safe(() => tournamentSummary({'sourceKeyId': studentId,
+        'fromDate': range.fromDate, 'toDate': range.toDate})),
+    ]);
+    final wantedId = '$studentId'.trim();
+    final wantedName = studentName.trim().toUpperCase();
+    bool sameId(Object? value) {
+      final actual = '${value ?? ''}'.trim();
+      final a = num.tryParse(actual), b = num.tryParse(wantedId);
+      return actual.isNotEmpty && ((a != null && b != null) ? a == b : actual == wantedId);
+    }
+    List<Map<String, dynamic>> selected(List<Map<String, dynamic>> rows,
+        {bool genericNameIsStudent = true}) {
+      Object? id(Map row) => row['studentId'] ?? row['studentID'] ?? row['stuId'] ?? row['sourceKeyId'];
+      Object? name(Map row) => row['studentName'] ?? row['receiverName'] ?? (genericNameIsStudent ? row['name'] : null);
+      bool identified(Map row) => '${id(row) ?? ''}'.trim().isNotEmpty || '${name(row) ?? ''}'.trim().isNotEmpty;
+      bool mine(Map row) {
+        if ('${id(row) ?? ''}'.trim().isNotEmpty) return sameId(id(row));
+        return wantedName.isNotEmpty && '${name(row) ?? ''}'.trim().toUpperCase() == wantedName;
+      }
+      // Anonymous rows are trusted only because this request explicitly sent
+      // sourceKeyId. Named rows require a positive child match.
+      return rows.any(identified) ? rows.where(mine).toList() : rows;
+    }
+    final details = selected(results[0]);
+    final gradings = selected(results[1]);
+    final tournaments = selected(results[2], genericNameIsStudent: false);
+    final out = <String, dynamic>{...?seed, 'id': studentId, 'studentId': studentId, 'name': studentName};
+    void copy(Map source, String target, List<String> aliases) {
+      if ('${out[target] ?? ''}'.trim().isNotEmpty) return;
+      for (final key in aliases) {
+        final value = source[key];
+        if (value != null && '$value'.trim().isNotEmpty) { out[target] = value; return; }
+      }
+    }
+    for (final row in details) {
+      copy(row, 'registrationNo', const ['registrationNo', 'regNo', 'studentCode']);
+      copy(row, 'currentGrade', const ['currentGrade', 'gradeName', 'grade', 'typeOfGrade']);
+      copy(row, 'tCenterName', const ['tCenterName', 'trainingCenter', 'centerName']);
+      copy(row, 'eCenterName', const ['eCenterName', 'ecName', 'examCenterName']);
+      copy(row, 'instructorName', const ['instructorName', 'coachName']);
+    }
+    if ('${out['trainingTme'] ?? ''}'.trim().isEmpty) {
+      final sessions = <String>[];
+      for (final row in details) {
+        final direct = '${row['trainingTme'] ?? row['trainingTime'] ?? ''}'.trim();
+        final from = '${row['tTimeFrom'] ?? row['timeFrom'] ?? ''}'.trim();
+        final to = '${row['tTimeTo'] ?? row['timeTo'] ?? ''}'.trim();
+        final day = '${row['dayOfWeek'] ?? ''}'.trim();
+        final time = direct.isNotEmpty ? direct : [if (from.isNotEmpty) from, if (to.isNotEmpty) 'To $to'].join(' ');
+        final label = [time, if (day.isNotEmpty) '($day)'].where((v) => v.isNotEmpty).join(' ');
+        if (label.isNotEmpty && !sessions.contains(label)) sessions.add(label);
+      }
+      if (sessions.isNotEmpty) out['trainingTme'] = sessions.join('\n');
+    }
+    if (gradings.isNotEmpty) {
+      final row = gradings.first;
+      copy(row, 'currentGrade', const ['currentGrade', 'gradeName', 'grade', 'typeOfGrade']);
+      copy(row, 'eCenterName', const ['eCenterName', 'ecName', 'examCenterName']);
+      copy(row, 'lastGradingDate', const ['lastGradingDate', 'lastGradeDate', 'examDate', 'gradingDate']);
+      copy(row, 'nextGradingDate', const ['nextGradingDate', 'nextGradeDate', 'nextExamDate']);
+      copy(row, 'gradingStatus', const ['gradingStatus', 'gradeStatus', 'resultStatus', 'status']);
+      copy(row, 'gradingPaymentStatus', const ['gradingPaymentStatus', 'gradePaymentStatus',
+        'examPaymentStatus', 'paymentStatus', 'payStatus']);
+    }
+    if (tournaments.isNotEmpty) {
+      final row = tournaments.first;
+      copy(row, 'tournamentName', const ['tournamentName', 'name', 'Name']);
+      copy(row, 'tournamentDate', const ['tournamentDate', 'fromDate', 'startDate', 'date']);
+      copy(row, 'tournamentToDate', const ['tournamentToDate', 'toDate', 'endDate']);
+      copy(row, 'tournamentStatus', const ['tournamentStatus', 'competitionStatus', 'status']);
+    }
+    return out;
+  }
+
   static Future<List<Map<String, dynamic>>> paymentSlips(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/PaymentSlips', body));
   static Future<List<Map<String, dynamic>>> reimbursementReport(Map<String, dynamic> body) async =>

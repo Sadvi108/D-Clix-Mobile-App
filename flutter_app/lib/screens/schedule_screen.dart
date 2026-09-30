@@ -36,10 +36,17 @@ class ScheduleScreen extends StatefulWidget {
 class _ScheduleScreenState extends State<ScheduleScreen>
     with UseApi<ScheduleScreen>, LiveRefreshMixin<ScheduleScreen> {
   final _range = RnApi.defaultRange();
-  late final _details =
-      useApi(() => RnApi.studentDetails({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
+  late final _details = useApi(() {
+    final session = UserSession.instance;
+    return RnApi.studentDetails({
+      'sourceKeyId': session.currentStudentId,
+      'studentName': session.activeStudentName,
+      'fromDate': _range.fromDate,
+      'toDate': _range.toDate,
+    });
+  });
   // One-off approved bookings, on top of the weekly timetable above.
-  late final _bookings = useApi(RnApi.getBookings);
+  late final _bookings = useApi(() => RnApi.getBookings(studentId: UserSession.instance.currentStudentId));
   int _active = 0;
 
   // 10 days starting today

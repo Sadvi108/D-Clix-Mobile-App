@@ -33,8 +33,11 @@ class AttendanceScreen extends StatefulWidget {
 
 class _AttendanceScreenState extends State<AttendanceScreen> with UseApi<AttendanceScreen> {
   final _range = RnApi.defaultRange();
-  late final _att =
-      useApi(() => RnApi.attendanceReport({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
+  late final _att = useApi(() => RnApi.attendanceReport({
+        'sourceKeyId': UserSession.instance.currentStudentId,
+        'fromDate': _range.fromDate,
+        'toDate': _range.toDate,
+      }));
 
   @override
   void initState() {

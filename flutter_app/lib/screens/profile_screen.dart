@@ -203,12 +203,15 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
 
     // A guardian can narrow the app to one sibling; show who is active.
     final name = (session.activeStudentName?.isNotEmpty ?? false) ? session.activeStudentName! : u('name');
-    final infoGrade = '${_info.data?['currentGrade'] ?? ''}'.trim();
-    final grade = infoGrade.isNotEmpty ? infoGrade : u('currentGrade');
+    final hasSelectedStudent = session.activeStudentName?.trim().isNotEmpty ?? false;
+    final selectedInfo = hasSelectedStudent ? session.activeStudentInfo : _info.data;
+    final infoGrade = '${selectedInfo?['currentGrade'] ?? ''}'.trim();
+    final grade = infoGrade.isNotEmpty ? infoGrade : (hasSelectedStudent ? '' : u('currentGrade'));
     final clubList = (user['clubList'] as List? ?? const []).whereType<Map>().toList();
     final clubName = session.clubDisplayName;
-    final regNo = '${_info.data?['registrationNo'] ?? ''}'.trim();
-    final code = regNo.isNotEmpty ? regNo : (u('code').isNotEmpty ? u('code') : u('icNo'));
+    final regNo = '${selectedInfo?['registrationNo'] ?? selectedInfo?['value'] ?? ''}'.trim();
+    final code = regNo.isNotEmpty ? regNo
+        : (hasSelectedStudent ? '' : (u('code').isNotEmpty ? u('code') : u('icNo')));
     final status = u('status');
     final isActive = status.toLowerCase() == 'active';
 
@@ -222,10 +225,10 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
     final currentBranch = (_branches.data ?? const []).where((b) => '${b['id']}' == u('branchId')).firstOrNull;
     final stats = [...?_clubStats.data]..sort((a, b) => RnApi.number(a['value']).compareTo(RnApi.number(b['value'])));
 
-    final eCenter = '${_info.data?['eCenterName'] ?? ''}'.trim();
-    final tCenter = '${_info.data?['tCenterName'] ?? ''}'.trim();
-    final instructorName = '${_info.data?['instructorName'] ?? ''}'.trim();
-    final phone = u('handPhone');
+    final eCenter = '${selectedInfo?['eCenterName'] ?? ''}'.trim();
+    final tCenter = '${selectedInfo?['tCenterName'] ?? ''}'.trim();
+    final instructorName = '${selectedInfo?['instructorName'] ?? ''}'.trim();
+    final phone = hasSelectedStudent ? '${selectedInfo?['handPhone'] ?? ''}'.trim() : u('handPhone');
     final details = [
       (icon: Ion.callOutline, label: 'Phone', value: phone, copy: true),
       if (!isInstructor) (icon: Ion.ribbonOutline, label: 'Belt / Grade', value: grade, copy: false),

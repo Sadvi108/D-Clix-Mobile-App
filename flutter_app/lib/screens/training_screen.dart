@@ -21,8 +21,11 @@ class _TrainingScreenState extends State<TrainingScreen>
     with UseApi<TrainingScreen>, LiveRefreshMixin<TrainingScreen> {
   final _range = RnApi.defaultRange();
   late final _info = useApi(RnApi.myInfo);
-  late final _att =
-      useApi(() => RnApi.attendanceReport({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
+  late final _att = useApi(() => RnApi.attendanceReport({
+        'sourceKeyId': UserSession.instance.currentStudentId,
+        'fromDate': _range.fromDate,
+        'toDate': _range.toDate,
+      }));
 
   @override
   void initState() {
@@ -46,16 +49,18 @@ class _TrainingScreenState extends State<TrainingScreen>
     final present =
         records.where((r) => RegExp('present', caseSensitive: false).hasMatch('${r['attendanceType'] ?? ''}')).length;
 
-    final infoGrade = '${_info.data?['currentGrade'] ?? ''}';
-    final userGrade = '${user['currentGrade'] ?? ''}';
+    final selectedInfo = session.activeStudentName?.trim().isNotEmpty == true
+        ? session.activeStudentInfo : _info.data;
+    final infoGrade = '${selectedInfo?['currentGrade'] ?? ''}';
+    final userGrade = session.activeStudentName?.trim().isNotEmpty == true ? '' : '${user['currentGrade'] ?? ''}';
     final grade = infoGrade.isNotEmpty ? infoGrade : (userGrade.isNotEmpty ? userGrade : '—');
     final gradeNum = int.tryParse(RegExp(r'Grade\s*(\d+)', caseSensitive: false).firstMatch(grade)?.group(1) ?? '');
     final beltName = RegExp(r'\(([^)]+)\)').firstMatch(grade)?.group(1) ?? grade;
     final progress = gradeNum != null ? (((10 - gradeNum) / 10) * 100).round().clamp(8, 100) : 50;
     final accent = c.primary;
-    final tCenterName = '${_info.data?['tCenterName'] ?? ''}';
+    final tCenterName = '${selectedInfo?['tCenterName'] ?? ''}';
     final clubName = '${user['clubName'] ?? ''}';
-    final instructorName = '${_info.data?['instructorName'] ?? ''}';
+    final instructorName = '${selectedInfo?['instructorName'] ?? ''}';
 
     Widget heroStat(String n, String l) => Expanded(
           child: Container(

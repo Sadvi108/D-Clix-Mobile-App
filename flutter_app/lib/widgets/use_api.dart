@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../services/api_service.dart';
+import '../services/user_session.dart';
 
 import '../services/response_utils.dart';
 
@@ -75,12 +76,13 @@ class ApiResource<T> extends ChangeNotifier {
 /// `useApi` for a State: `late final stats = useApi(() => RnApi.homePageStats());`
 /// The State rebuilds whenever any resource changes; resources are disposed with it.
 ///
-/// A token change (guardian switching student, branch switch) bumps
-/// [ApiService.sessionEpoch]; the next build notices and refetches everything, as RN's
-/// `[token]` deps do.
+/// Token/club changes bump [ApiService.sessionEpoch]. Guardian child changes
+/// keep the token but bump [UserSession.sessionEpoch]. Either identity boundary
+/// refetches resources, matching RN's `[token, selectedStudent]` dependencies.
 mixin UseApi<W extends StatefulWidget> on State<W> {
   final List<ApiResource<dynamic>> _resources = [];
-  int _epoch = ApiService.sessionEpoch;
+  int _apiEpoch = ApiService.sessionEpoch;
+  int _studentEpoch = UserSession.instance.sessionEpoch;
 
   @override
   void didChangeDependencies() {
@@ -95,8 +97,9 @@ mixin UseApi<W extends StatefulWidget> on State<W> {
   }
 
   void _checkEpoch() {
-    if (_epoch == ApiService.sessionEpoch) return;
-    _epoch = ApiService.sessionEpoch;
+    if (_apiEpoch == ApiService.sessionEpoch && _studentEpoch == UserSession.instance.sessionEpoch) return;
+    _apiEpoch = ApiService.sessionEpoch;
+    _studentEpoch = UserSession.instance.sessionEpoch;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) reloadAll();
     });

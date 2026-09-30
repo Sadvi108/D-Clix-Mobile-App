@@ -12,6 +12,7 @@ import 'secure_store.dart';
 import 'notification_service.dart';
 import 'response_utils.dart';
 import 'live_refresh.dart';
+import 'rn_api.dart';
 
 class UserSession extends ChangeNotifier {
   static final UserSession instance = UserSession._();
@@ -96,6 +97,11 @@ class UserSession extends ChangeNotifier {
   /// scoping the already-loaded multi-student data instead of re-auth.
   String? activeStudentName;
   Object? activeStudentId;
+  /// Report-backed details for a guardian-selected child. MyInfo always
+  /// remains tied to the primary login.
+  Map<String, dynamic>? activeStudentInfo;
+  bool activeStudentInfoLoading = false;
+  String? activeStudentInfoError;
 
   /// Payment lock — when a payment is in progress, a 2-minute window
   /// blocks starting any other payment. Pure client-side guard.
@@ -129,6 +135,9 @@ class UserSession extends ChangeNotifier {
   void _clearAccountScoped() {
     activeStudentName = null;
     activeStudentId = null;
+    activeStudentInfo = null;
+    activeStudentInfoLoading = false;
+    activeStudentInfoError = null;
     siblings = null;
     paymentLockUntil = null;
     _sessionEpoch++;
@@ -150,6 +159,9 @@ class UserSession extends ChangeNotifier {
     activeStudentName =
         (name != null && name.trim().isNotEmpty) ? name.trim() : null;
     activeStudentId = id;
+    activeStudentInfo = null;
+    activeStudentInfoLoading = false;
+    activeStudentInfoError = null;
     _sessionEpoch++;
     notifyListeners();
   }
@@ -1568,10 +1580,38 @@ class UserSession extends ChangeNotifier {
   /// pure client-side filter: set [activeStudentName] and every list
   /// getter re-scopes instantly. Pass `name: null` to show all children.
   ///
-  /// Always succeeds (no network), returns true so existing callers and
-  /// their success UI keep working.
+  /// Selection is immediate; report-backed details then load for that child.
+  /// A late result is discarded when another child is selected first.
   Future<bool> switchStudent(Object studentId, {String? studentName}) async {
     setActiveStudent(name: studentName, id: studentId);
+    final epoch = sessionEpoch;
+    activeStudentInfoLoading = true;
+    notifyListeners();
+    Map<String, dynamic>? seed;
+    for (final row in siblings ?? const []) {
+      if (row is! Map) continue;
+      final rowId = '${row['id'] ?? row['studentId'] ?? ''}'.trim();
+      final rowName = '${row['text'] ?? row['studentName'] ?? row['name'] ?? ''}'.trim();
+      if (rowId == '$studentId' ||
+          (studentName != null && rowName.toUpperCase() == studentName.trim().toUpperCase())) {
+        seed = Map<String, dynamic>.from(row);
+        break;
+      }
+    }
+    try {
+      final info = await RnApi.studentOverview(
+          studentId: studentId, studentName: studentName?.trim() ?? '', seed: seed);
+      if (epoch != sessionEpoch) return true;
+      activeStudentInfo = info;
+    } catch (e) {
+      if (epoch != sessionEpoch) return true;
+      activeStudentInfoError = friendlyError(e);
+    } finally {
+      if (epoch == sessionEpoch) {
+        activeStudentInfoLoading = false;
+        notifyListeners();
+      }
+    }
     return true;
   }
 
