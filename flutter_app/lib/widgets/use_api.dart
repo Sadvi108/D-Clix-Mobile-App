@@ -22,6 +22,9 @@ class ApiResource<T> extends ChangeNotifier {
   /// [initial] seeds [data] (e.g. from the session cache) so the screen paints at once;
   /// the fetch then runs silently behind it, as a refresh rather than a cold load.
   ApiResource(this._fn, {bool autoRun = true, T? initial}) {
+    // A manually-triggered resource has not started a request yet. Treating it
+    // as loading disables the very button that is meant to start that request.
+    loading = autoRun;
     if (initial != null) {
       data = initial;
       loading = false;

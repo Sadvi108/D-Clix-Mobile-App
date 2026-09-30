@@ -124,6 +124,72 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
       ));
   }
 
+  Future<({String username, String password})?> _clubCredentials(String clubLabel) async {
+    final auth = UserSession.instance.authData ?? const <String, dynamic>{};
+    String first(List<String> keys) {
+      for (final key in keys) {
+        final value = '${auth[key] ?? ''}'.trim();
+        if (value.isNotEmpty) return value;
+      }
+      return '';
+    }
+
+    final username = TextEditingController(text: first(const ['username', 'userName', 'icNo']));
+    final password = TextEditingController();
+    var obscure = true;
+    final result = await showDialog<({String username, String password})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Switch to $clubLabel'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Confirm your login so the club can issue a new secure session.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: username,
+              autofocus: username.text.isEmpty,
+              autocorrect: false,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Username or IC number'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: password,
+              autofocus: username.text.isNotEmpty,
+              obscureText: obscure,
+              onSubmitted: (_) {
+                if (username.text.trim().isNotEmpty && password.text.isNotEmpty) {
+                  Navigator.pop(dialogContext, (username: username.text.trim(), password: password.text));
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'Password',
+                suffixIcon: IconButton(
+                  tooltip: obscure ? 'Show password' : 'Hide password',
+                  onPressed: () => setDialogState(() => obscure = !obscure),
+                  icon: Icon(obscure ? Ion.eyeOutline : Ion.eyeOffOutline),
+                ),
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                if (username.text.trim().isEmpty || password.text.isEmpty) return;
+                Navigator.pop(dialogContext, (username: username.text.trim(), password: password.text));
+              },
+              child: const Text('Switch club'),
+            ),
+          ],
+        ),
+      ),
+    );
+    username.dispose();
+    password.dispose();
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
@@ -140,8 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
     final infoGrade = '${_info.data?['currentGrade'] ?? ''}'.trim();
     final grade = infoGrade.isNotEmpty ? infoGrade : u('currentGrade');
     final clubList = (user['clubList'] as List? ?? const []).whereType<Map>().toList();
-    final clubName =
-        u('clubName').isNotEmpty ? u('clubName') : (clubList.isNotEmpty ? '${clubList.first['text'] ?? ''}' : '');
+    final clubName = session.clubDisplayName;
     final regNo = '${_info.data?['registrationNo'] ?? ''}'.trim();
     final code = regNo.isNotEmpty ? regNo : (u('code').isNotEmpty ? u('code') : u('icNo'));
     final status = u('status');
@@ -712,6 +777,29 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
               for (final cl in clubList)
                 (id: cl['id'], label: '${cl['text'] ?? ''}', active: '${cl['id']}' == u('clubId')),
             ],
+            onPick: (it) async {
+              if (it.active) return;
+              final selected = clubList.where((cl) => '${cl['id']}' == '${it.id}').firstOrNull;
+              final clubCode = '${selected?['clubCode'] ?? selected?['value'] ?? selected?['code'] ?? ''}'.trim();
+              if (clubCode.isEmpty) {
+                await notify(this.context, 'Switch failed', 'This club does not have a valid club code.');
+                return;
+              }
+              final credentials = await _clubCredentials(it.label);
+              if (credentials == null || !mounted) return;
+              final rawBranch = selected?['branchId'];
+              final branchId = rawBranch is num ? rawBranch.toInt() : int.tryParse('$rawBranch') ?? 0;
+              final ok = await session.switchClub(
+                clubId: it.id ?? 0,
+                clubCode: clubCode,
+                username: credentials.username,
+                password: credentials.password,
+                branchId: branchId,
+              );
+              if (!mounted) return;
+              await notify(this.context, ok ? 'Switched to ${it.label}' : 'Switch failed',
+                  ok ? null : (session.error ?? 'Unknown error'));
+            },
           ),
         ),
       ],

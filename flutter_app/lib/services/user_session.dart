@@ -1090,8 +1090,14 @@ class UserSession extends ChangeNotifier {
 
   String get clubDisplayName {
     final list = authData?['clubList'];
-    if (list is List && list.isNotEmpty && list.first is Map) {
-      final t = (list.first as Map)['text']?.toString();
+    if (list is List && list.isNotEmpty) {
+      final activeId = '${authData?['clubId'] ?? ''}';
+      final active = list
+          .whereType<Map>()
+          .where((row) => '${row['id'] ?? ''}' == activeId)
+          .firstOrNull;
+      final row = active ?? list.whereType<Map>().firstOrNull;
+      final t = row?['text']?.toString();
       if (t != null && t.isNotEmpty) return t;
     }
     return clubName;
@@ -1567,6 +1573,95 @@ class UserSession extends ChangeNotifier {
   Future<bool> switchStudent(Object studentId, {String? studentName}) async {
     setActiveStudent(name: studentName, id: studentId);
     return true;
+  }
+
+  /// Switch a student/guardian login to another enrolled club.
+  ///
+  /// Unlike a branch switch, the API requires the user's credentials and
+  /// returns a complete auth payload with a club-scoped bearer token. The
+  /// password is used only for this request and is never retained locally.
+  Future<bool> switchClub({
+    required Object clubId,
+    required String clubCode,
+    required String username,
+    required String password,
+    int branchId = 0,
+  }) async {
+    if (!isLoggedIn || isInstructor) return false;
+    final loginName = username.trim();
+    if (loginName.isEmpty || password.isEmpty || clubCode.trim().isEmpty) {
+      error = 'Username, password and club are required.';
+      notifyListeners();
+      return false;
+    }
+
+    pauseNotificationPolling();
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final resp = await Api.accountChangeClub({
+        'username': loginName,
+        'password': password,
+        'userType': 3,
+        'clubCode': clubCode.trim(),
+        'branchId': branchId,
+        'accessMethod': 0,
+        'deviceType': 'mobile',
+      });
+      final apiErr = apiEnvelopeError(resp);
+      if (apiErr != null) throw Exception(apiErr);
+      if (resp is! Map || resp['data'] is! Map) {
+        throw Exception(
+            'Unexpected response from the server. Please try again.');
+      }
+      final previous = Map<String, dynamic>.from(authData!);
+      final next = Map<String, dynamic>.from(resp['data'] as Map);
+      final token = '${next['accessToken'] ?? ''}'.trim();
+      if (token.isEmpty) throw Exception('No access token returned');
+
+      // Some deployments omit these navigation fields from ChangeClub even
+      // though Authenticate includes them. Keep only the non-secret context
+      // required to allow another switch.
+      if (next['clubList'] is! List) next['clubList'] = previous['clubList'];
+      if (next['userType'] == null) next['userType'] = previous['userType'] ?? 3;
+      if ('${next['username'] ?? ''}'.trim().isEmpty) next['username'] = previous['username'] ?? loginName;
+      if ('${next['clubId'] ?? ''}'.trim().isEmpty) next['clubId'] = clubId;
+      if ('${next['clubCode'] ?? ''}'.trim().isEmpty) next['clubCode'] = clubCode.trim();
+      if (branchId != 0 && '${next['branchId'] ?? ''}'.trim().isEmpty) next['branchId'] = branchId;
+
+      ApiService.setToken(token);
+      authData = next;
+      _clearAccountScoped();
+      myInfo = null;
+      homeStats = null;
+      homeStatsRaw = null;
+      homeStatsError = null;
+      clubStats = null;
+      notifications = null;
+      notificationsRevision++;
+      notificationsError = null;
+      _acknowledgedRead.clear();
+      studentAddtnlInfo = null;
+      outstandingList = null;
+      outstandingRaw = null;
+      outstandingError = null;
+      gradingSchedule = null;
+      nextBookings = null;
+      allBookings = null;
+
+      await _persistAuth();
+      await _loadAll();
+      return true;
+    } catch (e) {
+      error = friendlyError(e);
+      debugPrint('switchClub failed: $e');
+      return false;
+    } finally {
+      loading = false;
+      resumeNotificationPolling();
+      notifyListeners();
+    }
   }
 
   /// Clear the student filter — show the aggregate across all children.

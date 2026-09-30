@@ -1,12 +1,13 @@
 // Manual QA 2026-09-30: three invoices ticked across siblings on the Pay tab, and the payment
-// picked up only one. The app sent all three ids; /Outstanding/PayInvoices billed a subset.
-// The production app never mixed children in one invoice payment, so the Pay tab now takes
-// one child per payment. Advance payment still bills siblings together (term model).
+// picked up only one. /Outstanding/PayInvoices binds one student to a payment, so a shared
+// bank-in receipt must be submitted once per sibling with that sibling's invoice ids.
 //
 // Every name and id here is invented.
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -44,13 +45,12 @@ Future<void> _tapPayBar(WidgetTester tester) async {
 
 void main() {
   late http.Client original;
-  late List<String> paths;
   late List<String> payBodies;
+  late Directory tmp;
 
   setUp(() {
     original = ApiService.client;
     SharedPreferences.setMockInitialValues({});
-    paths = [];
     payBodies = [];
     final s = UserSession.instance;
     s.authData = {'id': 1, 'studentId': 1, 'userType': 3, 'name': 'Ari Lim'};
@@ -58,7 +58,6 @@ void main() {
     s.activeStudentId = null;
     s.activeStudentName = null;
     ApiService.client = MockClient((req) async {
-      paths.add(req.url.path);
       switch (req.url.path) {
         case '/Listing/MySiblings':
           return _ok([
@@ -78,7 +77,9 @@ void main() {
               {'invoiceId': 900 + id, 'studentId': id, 'invoiceDate': '2026-10-01T00:00:00', 'dueAmount': 85},
           ]);
         case '/Outstanding/PayInvoices':
-          payBodies.add(req.body);
+          final body = latin1.decode(req.bodyBytes);
+          payBodies.add(body);
+          if (body.contains('name="PaymentMethod"\r\n\r\n1')) return _ok('Saved');
           // An in-envelope error stops the flow before the gateway WebView, which has no
           // implementation under test.
           return http.Response(jsonEncode({'status': 400, 'meta': {'code': 400, 'error': 'stop before the gateway'}}),
@@ -87,10 +88,19 @@ void main() {
       }
       return _ok([]);
     });
+    tmp = Directory.systemTemp.createTempSync('sibling_slip');
+    final slip = File('${tmp.path}/slip.png')..writeAsBytesSync(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='));
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/image_picker'),
+        (call) async => call.method == 'pickImage' ? slip.path : null);
   });
 
   tearDown(() {
     ApiService.client = original;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/image_picker'), null);
+    tmp.deleteSync(recursive: true);
     UserSession.instance.activeStudentId = null;
     UserSession.instance.activeStudentName = null;
     UserSession.instance.stopNotificationPolling();
@@ -106,16 +116,37 @@ void main() {
     expect(find.text('2 selected'), findsOneWidget);
   }
 
-  testWidgets('a cart holding two children is refused before the pay sheet opens', (tester) async {
+  testWidgets('one sibling receipt creates a correctly scoped payment for each child', (tester) async {
     await tester.pumpWidget(_wrap(const PaymentsScreen()));
     await _settle(tester);
     await tickOnePerChild(tester);
 
     await _tapPayBar(tester);
 
-    expect(find.text('Pay for one child at a time'), findsOneWidget);
-    expect(find.text('Make Payment'), findsNothing, reason: 'no method or slip may be chosen for a mixed cart');
-    expect(paths.where((p) => p.endsWith('/PayInvoices')), isEmpty);
+    expect(find.text('Make Payment'), findsOneWidget);
+    expect(find.text('Ari Lim: 85.00  •  Bea Lim: 85.00'), findsOneWidget);
+    await tester.tap(find.text('Direct Bank-In'));
+    await tester.pump();
+    await tester.tap(find.text('Gallery'));
+    await _settle(tester);
+    await tester.ensureVisible(find.text('Submit Slip'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Submit Slip'));
+      await Future<void>.delayed(const Duration(seconds: 1));
+    });
+    await _settle(tester);
+
+    expect(payBodies, hasLength(2));
+    final groups = payBodies
+        .map((body) => RegExp(r'name="InvoiceIds"\r\n\r\n(\d+)').allMatches(body).map((m) => m.group(1)).toList())
+        .toList();
+    expect(groups, unorderedEquals([
+      ['101'],
+      ['201'],
+    ]));
+    expect(payBodies.every((body) => body.contains('filename="slip.png"')), isTrue);
+    expect(find.text('Submitted'), findsOneWidget);
   });
 
   testWidgets("one child's invoices open the sheet and every id is posted", (tester) async {

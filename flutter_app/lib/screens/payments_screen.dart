@@ -165,16 +165,18 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           'A payment is still being confirmed. Check Payment History before paying again.');
       return;
     }
-    // One child per invoice payment. A cart mixing siblings sent every id, yet /Outstanding/PayInvoices
-    // billed one invoice of three (manual QA 2026-09-30). The old app never mixed children: a sibling
-    // was its own session (Account/ChangeStudent, HomePageViewModel.cs:651-697) and dues were paid
-    // from that session's own list (OutstandingPageViewModel.cs:146-152, 203). Checked before the
-    // sheet, so it covers online and Bank-In alike. Advance payment is exempt: it bills siblings
-    // together through the term model, as the old app did (TermPaymentPageViewModel.cs:82-99).
-    if (term == null && _cart.values.map((i) => i.studentId).toSet().length > 1) {
-      notify(context, 'Pay for one child at a time',
-          "Your selection has invoices for more than one child. Pay each child's invoices separately.");
-      return;
+    final accountTotals = <int, num>{};
+    for (final item in _cart.values) {
+      accountTotals.update(item.studentId, (value) => value + RnApi.number(item.invoice['dueAmount']),
+          ifAbsent: () => RnApi.number(item.invoice['dueAmount']));
+    }
+    String accountName(int id) {
+      final sibling = (_siblings.data ?? const <Map<String, dynamic>>[])
+          .where((row) => _intOf(row['id']) == id)
+          .firstOrNull;
+      if (sibling != null && '${sibling['text'] ?? ''}'.trim().isNotEmpty) return '${sibling['text']}'.trim();
+      final invoice = _cart.values.where((item) => item.studentId == id).firstOrNull?.invoice;
+      return '${invoice?['studentName'] ?? invoice?['name'] ?? 'Student'}'.trim();
     }
     showModalBottomSheet<void>(
       context: context,
@@ -187,6 +189,9 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         invoiceIds: term?.ids ??
             _cart.values.map((i) => _intOf(i.invoice['invoiceId'])).where((id) => id > 0).toList(),
         total: term?.total ?? _cartTotal,
+        accounts: term == null
+            ? [for (final entry in accountTotals.entries) (name: accountName(entry.key), total: entry.value)]
+            : const [],
         onProceed: (method, slip) => _proceedToPay(term, method, slip),
       ),
     );
@@ -195,14 +200,26 @@ class _PaymentsScreenState extends State<PaymentsScreen>
   /// Returns true when the sheet should close.
   Future<bool> _proceedToPay(TermPayContext? term, String method, XFile? slip) async {
     final payingIds = term?.ids ?? _cart.values.map((i) => _intOf(i.invoice['invoiceId'])).where((id) => id > 0).toList();
+    final accountGroups = <int, List<_CartItem>>{};
+    if (term == null) {
+      for (final item in _cart.values) {
+        if (_intOf(item.invoice['invoiceId']) > 0) accountGroups.putIfAbsent(item.studentId, () => []).add(item);
+      }
+    }
     final hasTermSelection = term != null && term.months.isNotEmpty;
     if (payingIds.isEmpty && !hasTermSelection) {
       await notify(context, 'Select invoices', 'Choose at least one invoice to pay.');
       return false;
     }
+    final submittedKeys = <String>{};
     try {
       if (method != 'bankin') {
-        // One gateway session for everything selected; /Bcpg bills un-invoiced advance months too.
+        if (term == null && accountGroups.length > 1) {
+          await notify(context, 'Pay online one child at a time',
+              'The online gateway creates one student payment at a time. Choose Direct Bank-In to submit one receipt for these siblings together.');
+          return false;
+        }
+        // One gateway session for everything selected; the term bills un-invoiced advance months too.
         final start = await _startPayment(payingIds, term);
         if (!mounted) return true;
         Navigator.of(context).pop(); // close the sheet before the gateway opens
@@ -243,21 +260,54 @@ class _PaymentsScreenState extends State<PaymentsScreen>
             "A bank-in slip can only be submitted against issued invoices. Pay online to settle months your academy hasn't invoiced yet.");
         return false;
       }
-      final result = await ApiService.postMultipart(
-        '/Outstanding/PayInvoices?PayTermPayments=${term != null}&PurchaseItems=false',
-        {'PaymentMethod': '1'},
-        repeatedFields: {'InvoiceIds': payingIds.map((id) => '$id').toList()},
-        uploads: [(name: slip.name, bytes: await slip.readAsBytes())],
-      );
-      final error = apiEnvelopeError(result);
-      if (error != null) throw Exception(error);
+      final upload = (name: slip.name, bytes: await slip.readAsBytes());
+      if (term == null && accountGroups.length > 1) {
+        // The endpoint binds a payment to one student even when invoice ids
+        // from several siblings are posted together. Submit one server record
+        // per child, with the same receipt attached, so each record keeps the
+        // real name and that child's own subtotal.
+        for (final group in accountGroups.values) {
+          final result = await ApiService.postMultipart(
+            '/Outstanding/PayInvoices',
+            {'PaymentMethod': '1'},
+            repeatedFields: {
+              'InvoiceIds': group.map((item) => '${_intOf(item.invoice['invoiceId'])}').toList()
+            },
+            uploads: [upload],
+          );
+          final error = apiEnvelopeError(result);
+          if (error != null) throw Exception(error);
+          submittedKeys.addAll(group.map((item) => item.key));
+        }
+      } else {
+        final result = await ApiService.postMultipart(
+          '/Outstanding/PayInvoices?PayTermPayments=${term != null}&PurchaseItems=false',
+          {'PaymentMethod': '1'},
+          repeatedFields: {'InvoiceIds': payingIds.map((id) => '$id').toList()},
+          uploads: [upload],
+        );
+        final error = apiEnvelopeError(result);
+        if (error != null) throw Exception(error);
+      }
       if (!mounted) return true;
       Navigator.of(context).pop();
       _afterPaid(term);
       await notify(context, 'Submitted', 'Your payment slip has been submitted for verification.');
       return false;
     } catch (e) {
-      if (mounted) await notify(context, 'Payment failed', friendlyError(e));
+      if (mounted && submittedKeys.isNotEmpty) {
+        setState(() {
+          for (final key in submittedKeys) {
+            _cart.remove(key);
+          }
+        });
+        _dues.reload();
+        _history.reload();
+        await notify(context, 'Partly submitted',
+            '${submittedKeys.length} invoice(s) were submitted. The remaining sibling payment failed: ${friendlyError(e)}');
+      } else if (mounted) {
+        await notify(context, 'Payment failed', friendlyError(e));
+      }
       return false;
     }
   }
@@ -683,8 +733,14 @@ class _PaySheet extends StatefulWidget {
   final TermPayContext? term;
   final List<int> invoiceIds;
   final num total;
+  final List<({String name, num total})> accounts;
   final Future<bool> Function(String method, XFile? slip) onProceed;
-  const _PaySheet({required this.term, required this.invoiceIds, required this.total, required this.onProceed});
+  const _PaySheet(
+      {required this.term,
+      required this.invoiceIds,
+      required this.total,
+      required this.accounts,
+      required this.onProceed});
 
   @override
   State<_PaySheet> createState() => _PaySheetState();
@@ -783,6 +839,12 @@ class _PaySheetState extends State<_PaySheet> {
                 )),
               ]),
             ),
+            if (widget.accounts.length > 1)
+              hint(
+                Ion.peopleOutline,
+                widget.accounts.map((account) => '${account.name}: ${account.total.toStringAsFixed(2)}').join('  •  '),
+                iconColor: c.primary,
+              ),
             if (term != null)
               hint(
                 Ion.calendarOutline,

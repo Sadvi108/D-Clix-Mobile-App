@@ -1,6 +1,8 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../services/api.dart';
@@ -42,6 +44,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
   final _manual = TextEditingController();
 
   bool _busy = false;
+  bool _pickingImage = false;
   bool _cameraFailed = false;
   bool _lock = false;
   _Result? _result;
@@ -153,6 +156,41 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
     }
   }
 
+  /// Decode a QR saved on the device, then submit it through the same
+  /// attendance path as a live camera scan. The image stays on the device.
+  Future<void> _pickQrImage() async {
+    if (_busy || _pickingImage || _result != null || _classPickCode != null) return;
+    setState(() {
+      _pickingImage = true;
+      _lock = true;
+    });
+    try {
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+      final capture = await _camera.analyzeImage(image.path);
+      final code = capture?.barcodes
+              .map((b) => b.rawValue?.trim() ?? '')
+              .firstWhere((value) => value.isNotEmpty, orElse: () => '') ??
+          '';
+      if (!mounted) return;
+      if (code.isEmpty) {
+        await notify(context, 'No QR code found', 'Choose a clear image containing the full D-CLIX QR code.');
+        return;
+      }
+      _lock = false;
+      await _submit(code);
+    } catch (e) {
+      if (mounted) await notify(context, 'Could not read QR image', friendlyError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pickingImage = false;
+          if (_result == null && _classPickCode == null && !_busy) _lock = false;
+        });
+      }
+    }
+  }
+
   /// Back to a clean scan. Call inside a `setState`.
   void _rescanState() {
     _lock = false;
@@ -260,7 +298,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
         ? result.title
         : picking
             ? 'Select your training class time'
-            : _busy
+            : _busy || _pickingImage
                 ? 'Checking in…'
                 : 'Align the QR within the frame';
     final hint = result != null
@@ -420,7 +458,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
                         corner(Alignment.topRight),
                         corner(Alignment.bottomLeft),
                         corner(Alignment.bottomRight),
-                        if (result == null && !_busy)
+                        if (result == null && !_busy && !_pickingImage)
                           AnimatedBuilder(
                             animation: _laser,
                             builder: (_, __) => Positioned(
@@ -435,7 +473,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
                               ),
                             ),
                           ),
-                        if (_busy) Center(child: CircularProgressIndicator(color: c.primary)),
+                        if (_busy || _pickingImage) Center(child: CircularProgressIndicator(color: c.primary)),
                         if (result != null)
                           Center(
                             child: Padding(
@@ -464,6 +502,8 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
                     child: Text(hint,
                         textAlign: TextAlign.center, style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 12)),
                   ),
+                  if (!kIsWeb && result == null && !picking && !_pickingImage)
+                    gradientBtn('Choose QR from Gallery', _pickQrImage, icon: Ion.imagesOutline),
                   if (picking && !_busy) gradientBtn('Scan Again', _rescan),
                   // No camera → manual code entry so check-in is still possible
                   if (_cameraFailed && result == null && !picking)

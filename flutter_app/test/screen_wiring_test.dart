@@ -183,6 +183,13 @@ void main() {
     expect(broken, isEmpty, reason: broken.join('\n'));
   });
 
+  test('attendance accepts a QR saved in the device gallery', () {
+    final source = File(screens['qr_scan_screen']!.path).readAsStringSync();
+    expect(source, contains('ImageSource.gallery'));
+    expect(source, contains('analyzeImage(image.path)'));
+    expect(source, contains('Choose QR from Gallery'));
+  });
+
   test('every screen in the service map still calls its services', () {
     final broken = <String>[];
     _expectedServices.forEach((screen, calls) {
