@@ -21,7 +21,8 @@ class InstructorCollectionsScreen extends StatefulWidget {
 
 class _InstructorCollectionsScreenState extends State<InstructorCollectionsScreen>
     with UseApi<InstructorCollectionsScreen> {
-  late final _counts = useApi(RnApi.collectionCount);
+  late final bool _collectionsAllowed = UserSession.instance.allowViewCollections;
+  late final _counts = useApi(RnApi.collectionCount, autoRun: _collectionsAllowed);
   bool _updating = false;
 
   @override
@@ -61,6 +62,38 @@ class _InstructorCollectionsScreenState extends State<InstructorCollectionsScree
   Widget build(BuildContext context) {
     final c = context.appColors;
     final tabBarHeight = tabBarClearance(context);
+    if (!_collectionsAllowed) {
+      return ColoredBox(
+        color: c.background,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          PremiumHeader(
+            title: 'Collections',
+            subtitle: 'Payments received across your club',
+            leading: HeaderIconButton(
+              icon: Ion.chevronBack,
+              label: 'Back',
+              onTap: () => safeBack(context),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Ion.lockClosedOutline, size: 44, color: c.textMuted),
+                const SizedBox(height: 14),
+                Text('Collections are not available',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                const SizedBox(height: 8),
+                Text('Your club administrator controls access to collection records.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, height: 19 / 13, color: c.textSecondary)),
+              ]),
+            ),
+          ),
+        ]),
+      );
+    }
     final d = _counts.data ?? const <String, dynamic>{};
     int n(dynamic v) => RnApi.number(v).toInt();
     // Old app: the three payment-type lists sit behind ViewReceipts(3) and the
@@ -249,7 +282,11 @@ class CollectionListScreen extends StatefulWidget {
 }
 
 class _CollectionListScreenState extends State<CollectionListScreen> with UseApi<CollectionListScreen> {
-  late final _list = useApi(() => RnApi.collectionCountList(widget.typeId));
+  late final bool _collectionsAllowed = UserSession.instance.allowViewCollections;
+  late final _list = useApi(
+    () => RnApi.collectionCountList(widget.typeId),
+    autoRun: _collectionsAllowed,
+  );
 
   @override
   void initState() {
@@ -260,6 +297,26 @@ class _CollectionListScreenState extends State<CollectionListScreen> with UseApi
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    if (!_collectionsAllowed) {
+      return Scaffold(
+        backgroundColor: c.background,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          RnHeader(title: widget.label),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  'Your club administrator has not enabled collection records for this account.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.textSecondary, height: 1.45),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
     dynamic first(Map r, List<String> keys) {
       for (final k in keys) {
         final v = r[k];

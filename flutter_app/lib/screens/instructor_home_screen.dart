@@ -319,7 +319,9 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
                 for (final group in const [_classes, _payments]) ...[
                   SectionLabel(group),
                   grid([
-                    for (final t in _tiles.where((t) => t.group == group))
+                    for (final t in _tiles.where((t) =>
+                        t.group == group &&
+                        (t.id != 'collections' || session.allowViewCollections)))
                       PremiumTile(icon: t.icon, tint: t.color, label: t.label, onTap: () => _onTile(t)),
                   ]),
                 ],

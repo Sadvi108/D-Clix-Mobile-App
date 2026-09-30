@@ -45,9 +45,10 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
 
   /// Whose booking screen this is, for the header line.
   String get _subjectName => UserSession.instance.displayName;
-  late final _centers = useApi(RnApi.trainingCenters);
-  late final _instructors = useApi(RnApi.instructors);
-  late final _info = useApi(RnApi.myInfo);
+  late final bool _bookingAllowed = UserSession.instance.allowClassBooking;
+  late final _centers = useApi(RnApi.trainingCenters, autoRun: _bookingAllowed);
+  late final _instructors = useApi(RnApi.instructors, autoRun: _bookingAllowed);
+  late final _info = useApi(RnApi.myInfo, autoRun: _bookingAllowed);
   // Scoped to the subject: a guardian's token would otherwise answer with the
   // account holder's bookings and the duplicate check would pass on a class the
   // selected child already has.
@@ -63,12 +64,12 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
       final id = _intOf(r['studentId'] ?? r['studentID']);
       return id == 0 || id == _studentId; // rows without an id are already token-scoped
     }).toList();
-  });
+  }, autoRun: _bookingAllowed);
   late final _pkg = useApi<Map<String, dynamic>?>(() async {
     if (_studentId == 0) return null;
     final d = unwrapData(await Api.classBookingPackageInfo(_studentId));
     return d is Map ? Map<String, dynamic>.from(d) : null;
-  });
+  }, autoRun: _bookingAllowed);
   late final _slots = useApi<List<Map<String, dynamic>>>(() async {
     if (_tCenterId == 0 || _instructorId == 0) return const [];
     final d = unwrapData(await Api.classBookingTrainingTimeWithDateAndInstructor(

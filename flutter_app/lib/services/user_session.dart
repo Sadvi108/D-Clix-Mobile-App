@@ -1050,6 +1050,11 @@ class UserSession extends ChangeNotifier {
   /// (old `ReportsPageViewModel.cs:241,267`, `OutstandingHomePageViewModel.cs:152`).
   bool get allowViewReceipts => permissionAllowed(3);
 
+  /// The instructor Collections feature exposes the same payment records as
+  /// the receipt lists, so the club master's ViewReceipts switch owns the
+  /// whole feature — including its aggregate counts and navigation entries.
+  bool get allowViewCollections => allowViewReceipts;
+
   /// `UpdateCollection` (old `OutstandingHomePageViewModel.cs:178`).
   bool get allowUpdateCollection => permissionAllowed(4);
 

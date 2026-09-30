@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../widgets/rn_kit.dart';
@@ -74,6 +75,7 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    final session = UserSession.instance;
     // Lives inside the tab shell (see the /more route), so the last row must clear the bar.
     final tabBarHeight = tabBarClearance(context);
     return Scaffold(
@@ -99,7 +101,9 @@ class MoreScreen extends StatelessWidget {
                   final w = box.maxWidth * .305;
                   final gap = (box.maxWidth - w * 3) / 2;
                   return Wrap(spacing: gap, children: [
-                    for (final o in s.items)
+                    for (final o in s.items.where(
+                      (o) => o.id != 'book' || session.allowClassBooking,
+                    ))
                       SizedBox(
                         width: w,
                         child: Padding(

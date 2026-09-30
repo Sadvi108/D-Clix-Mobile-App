@@ -173,10 +173,11 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
     ];
 
     final quickActions = isInstructor
-        ? const [
+        ? [
             (icon: Ion.checkmarkDoneCircleOutline, label: 'Check-In', route: '/instructor/attendance'),
             (icon: Ion.documentTextOutline, label: 'Reports', route: '/instructor/reports'),
-            (icon: Ion.cashOutline, label: 'Collections', route: '/instructor/collections'),
+            if (session.allowViewCollections)
+              (icon: Ion.cashOutline, label: 'Collections', route: '/instructor/collections'),
             (icon: Ion.headsetOutline, label: 'Help Desk', route: '/helpdesk'),
           ]
         : const [

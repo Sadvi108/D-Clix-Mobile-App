@@ -2,6 +2,8 @@ import '../theme/app_icons.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 
 /// The five-slot frosted bar from Expo v2.11.1, shared by both roles.
@@ -15,15 +17,26 @@ class ClubTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final bottom = MediaQuery.paddingOf(context).bottom;
+    final canViewCollections = instructor
+        ? context.watch<UserSession>().allowViewCollections
+        : true;
     final items = instructor
-        ? const [
+        ? [
             ('Home', '/instructor/home', AppIcons.home_outlined, AppIcons.home),
-            (
-              'Collections',
-              '/instructor/collections',
-              AppIcons.payments_outlined,
-              AppIcons.payments
-            ),
+            if (canViewCollections)
+              (
+                'Collections',
+                '/instructor/collections',
+                AppIcons.payments_outlined,
+                AppIcons.payments
+              )
+            else
+              (
+                'Check-In',
+                '/instructor/attendance',
+                AppIcons.calendar_month_outlined,
+                AppIcons.calendar_month
+              ),
             (
               'Reports',
               '/instructor/reports',

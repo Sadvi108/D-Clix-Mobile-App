@@ -135,13 +135,14 @@ String? permissionRedirect(String loc) {
     '/instructor/reports/receipt' || '/instructor/reports/payment-slip' => !s.allowViewReceipts,
     '/instructor/reports/reimbursement' => !s.allowViewReimbursement,
     '/instructor/reports/contribution' => !s.allowViewContribution,
+    '/instructor/collections' => !s.allowViewCollections,
     _ when loc.startsWith('/instructor/collections/') => !s.allowViewReceipts,
     '/book-class' => !s.allowClassBooking,
     _ => false,
   };
   if (!denied) return null;
   if (loc == '/book-class') return '/schedule';
-  return loc.startsWith('/instructor/collections/') ? '/instructor/collections' : '/instructor/reports';
+  return loc.startsWith('/instructor/collections') ? '/instructor/home' : '/instructor/reports';
 }
 
 final GoRouter appRouter = GoRouter(
