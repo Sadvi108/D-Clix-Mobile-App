@@ -57,6 +57,7 @@ class RnApi {
       _rows(await _report('/Reports/Receipts', body));
   static Future<List<Map<String, dynamic>>> attendanceReport(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/Attendance', body));
+
   /// The instructor's own club's exam sessions only.
   ///
   /// `/Reports/GradingSchedule` answers any instructor with every club's exams — a live probe
@@ -67,10 +68,28 @@ class RnApi {
   static Future<List<Map<String, dynamic>>> gradingSchedule(Map<String, dynamic> body) async {
     final [report, centres] =
         await Future.wait([_report('/Reports/GradingSchedule', body), Api.listingDropdownListByType(2)]);
-    String norm(Object? v) => '${v ?? ''}'.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-    final own = {for (final c in _rows(centres)) norm(c['text'])}..remove('');
-    return [for (final r in _rows(report)) if (own.contains(norm(r['ecName']))) r];
+    String norm(Object? v) => '${v ?? ''}'.trim().replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '').toLowerCase();
+    Iterable<String> aliases(Map<String, dynamic> row, List<String> keys) sync* {
+      for (final key in keys) {
+        final value = norm(row[key]);
+        if (value.isNotEmpty) yield value;
+      }
+    }
+
+    // Dropdown serializers differ between deployments: some put the visible
+    // centre name in `text`, others put a centre code/name in `value`. Match
+    // every explicit centre alias, but never the generic row `id` (which is an
+    // exam/result id in the report and could cross club boundaries).
+    final own = <String>{
+      for (final c in _rows(centres))
+        ...aliases(c, const ['text', 'value', 'name', 'centerName', 'examCenterName', 'ecName', 'code']),
+    };
+    return [
+      for (final r in _rows(report))
+        if (aliases(r, const ['ecName', 'examCenterName', 'centerName', 'ecCode', 'centerCode']).any(own.contains)) r,
+    ];
   }
+
   static Future<List<Map<String, dynamic>>> tournamentSummary(Map<String, dynamic> body) async =>
       _rows(await _report('/Reports/TournamentSummary', numericReportType(body)));
   static Future<List<Map<String, dynamic>>> purchaseRequests(Map<String, dynamic> body) async =>

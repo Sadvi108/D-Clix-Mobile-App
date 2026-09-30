@@ -4,6 +4,7 @@
 import 'package:dclix_app/router/app_router.dart';
 import 'package:dclix_app/screens/book_class_screen.dart';
 import 'package:dclix_app/screens/instructor_collections_screen.dart';
+import 'package:dclix_app/screens/instructor_home_screen.dart';
 import 'package:dclix_app/screens/more_screen.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/user_session.dart';
@@ -46,10 +47,11 @@ void main() {
   test('authentication flags map to the club-master feature switches', () {
     session.authData = {
       'isClassBookingEnabled': false,
-      'permissions': {'3': false, '4': true},
+      'permissions': {'2': false, '3': false, '4': true},
     };
 
     expect(session.allowClassBooking, isFalse);
+    expect(session.allowViewInvoices, isFalse);
     expect(session.allowViewCollections, isFalse);
     expect(session.allowUpdateCollection, isTrue,
         reason:
@@ -115,6 +117,30 @@ void main() {
 
     expect(find.text('Collections are not available'), findsOneWidget);
     expect(requests, isEmpty);
+  });
+
+  testWidgets(
+      'disabled outstanding dues stays hidden and makes no invoice request',
+      (tester) async {
+    session.authData = {
+      'id': 7,
+      'userType': 0,
+      'name': 'Test Instructor',
+      'permissions': {'2': false},
+    };
+    final requests = <Uri>[];
+    ApiService.client = MockClient((request) async {
+      requests.add(request.url);
+      return http.Response('{"status":200,"data":[]}', 200);
+    });
+
+    await tester
+        .pumpWidget(wrap(const InstructorHomeScreen(), provideSession: true));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('OUTSTANDING DUES'), findsNothing);
+    expect(find.text('Missing Invoice'), findsNothing);
+    expect(requests.where((u) => u.path == '/Outstanding/Fetch'), isEmpty);
   });
 
   testWidgets('disabled features disappear from their navigation entry points',

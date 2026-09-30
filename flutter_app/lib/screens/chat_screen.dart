@@ -51,8 +51,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted && userId == (session.authenticatedUserId ?? 0)) setState(() => _sent = sent);
   }
 
-  void _open(String key, String title, bool replyable) => context.push(
-      '/notification/${Uri.encodeComponent(key)}?t=${Uri.encodeQueryComponent(title)}${replyable ? '' : '&ro=1'}');
+  Future<void> _open(String key, String title, bool replyable) async {
+    await context.push(
+        '/notification/${Uri.encodeComponent(key)}?t=${Uri.encodeQueryComponent(title)}${replyable ? '' : '&ro=1'}');
+    // MyNotifications cannot contain messages sent by the student. Reload the
+    // local echo when the thread closes so the Chat Academy list immediately
+    // reflects the new preview even when the server inbox did not change.
+    if (mounted) await _loadSent(UserSession.instance);
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(

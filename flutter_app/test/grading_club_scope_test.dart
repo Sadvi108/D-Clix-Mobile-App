@@ -25,7 +25,7 @@ http.Response _ok(Object? data) => http.Response(jsonEncode({'status': 200, 'dat
 
 /// The instructor's own exam centres (`/Listing/DropdownListByType/2` is club-scoped).
 const _ownCentres = [
-  {'id': 1, 'value': 'Own Hall A', 'text': 'Own Hall A'},
+  {'id': 1, 'value': 'OWN-A', 'text': 'Own Hall A'},
   {'id': 2, 'value': 'Own School B', 'text': 'Own School B'},
 ];
 
@@ -34,9 +34,31 @@ final _today = DateTime.now().toIso8601String();
 /// What /Reports/GradingSchedule hands any instructor: their exams and everyone else's.
 List<Map<String, Object>> get _allClubsRows => [
       {'id': 10, 'resultId': 1, 'ecName': 'Own Hall A', 'examDate': _today, 'closingDate': _today, 'examTime': '9 AM'},
-      {'id': 11, 'resultId': 2, 'ecName': 'Other Club Hall', 'examDate': _today, 'closingDate': _today, 'examTime': '10 AM'},
-      {'id': 12, 'resultId': 3, 'ecName': ' own  school b ', 'examDate': _today, 'closingDate': _today, 'examTime': '11 AM'},
-      {'id': 13, 'resultId': 4, 'ecName': 'Another Club Dojo', 'examDate': _today, 'closingDate': _today, 'examTime': '2 PM'},
+      {
+        'id': 11,
+        'resultId': 2,
+        'ecName': 'Other Club Hall',
+        'examDate': _today,
+        'closingDate': _today,
+        'examTime': '10 AM'
+      },
+      {
+        'id': 12,
+        'resultId': 3,
+        'ecName': ' own  school b ',
+        'examDate': _today,
+        'closingDate': _today,
+        'examTime': '11 AM'
+      },
+      {
+        'id': 13,
+        'resultId': 4,
+        'ecName': 'Another Club Dojo',
+        'examDate': _today,
+        'closingDate': _today,
+        'examTime': '2 PM'
+      },
+      {'id': 14, 'resultId': 5, 'ecName': 'own-a', 'examDate': _today, 'closingDate': _today, 'examTime': '3 PM'},
     ];
 
 void main() {
@@ -57,11 +79,17 @@ void main() {
 
     final rows = await RnApi.gradingSchedule({});
 
-    expect(rows.map((r) => r['id']), [10, 12], reason: 'case and spacing differences still match');
+    expect(rows.map((r) => r['id']), [10, 12, 14],
+        reason: 'names and the dropdown value/code both identify the club centre');
   });
 
   test("fails closed when the club's exam-centre list comes back empty", () async {
-    serve(() => http.Response(jsonEncode({'status': 200, 'meta': {'code': 200}}), 200));
+    serve(() => http.Response(
+        jsonEncode({
+          'status': 200,
+          'meta': {'code': 200}
+        }),
+        200));
 
     expect(await RnApi.gradingSchedule({}), isEmpty);
   });

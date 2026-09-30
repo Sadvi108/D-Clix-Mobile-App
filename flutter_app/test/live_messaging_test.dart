@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/user_session.dart';
+import 'package:dclix_app/screens/chat_screen.dart';
 import 'package:dclix_app/screens/chat_thread_screen.dart';
 import 'package:dclix_app/theme/ion.dart';
 
@@ -143,5 +145,36 @@ void main() {
     expect(find.text('First outgoing'), findsOneWidget);
     expect(find.text('Next draft'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Chat Academy list reflects a sent help-desk message on return',
+      (tester) async {
+    ApiService.client = MockClient((request) async {
+      if (request.url.path == '/Profile/Send2ClubHelpDesk') {
+        return http.Response('{"status":200,"data":true}', 200);
+      }
+      return http.Response('{"status":200,"data":[]}', 200);
+    });
+    final router = GoRouter(routes: [
+      GoRoute(path: '/', builder: (_, __) => const ChatScreen()),
+      GoRoute(
+          path: '/notification/:group',
+          builder: (_, state) => ChatThreadScreen(
+              threadKey: state.pathParameters['group']!,
+              title: state.uri.queryParameters['t'] ?? 'Conversation')),
+    ]);
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Club · Help Desk'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Please call me');
+    await tester.tap(find.byIcon(Ion.send));
+    await tester.pumpAndSettle();
+    router.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('You: Please call me'), findsOneWidget);
   });
 }

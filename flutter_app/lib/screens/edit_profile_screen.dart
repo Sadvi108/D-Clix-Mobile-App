@@ -31,6 +31,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
+  final _ic = TextEditingController();
   final _address = TextEditingController();
   final _postal = TextEditingController();
   // The rest of the old app's profile form (`ProfileDataAccess.cs:80-110`).
@@ -97,6 +98,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _name.text = _u('name');
     _email.text = _u('emailAddress');
     _phone.text = _u('handPhone');
+    _ic.text = _u('icNo');
     _gender = _u('gender');
     _address.text = _u('address1');
     _postal.text = _u('postalCode');
@@ -193,7 +195,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void dispose() {
     for (final c in [
-      _name, _email, _phone, _address, _postal,
+      _name, _email, _phone, _ic, _address, _postal,
       _school, _className, _tshirt, _height, _weight, _blood, _food, _health,
       _newPwd, _confirmPwd,
     ]) {
@@ -296,7 +298,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final fields = <String, String>{
       'Id': _u('id'),
       'UserId': _u('userId'),
-      'IcNo': _u('icNo'),
+      // Students own this profile field. Instructor records keep echoing the
+      // server value because this request model also serves staff accounts.
+      'IcNo': s.isInstructor ? _u('icNo') : _ic.text.trim(),
       'Name': name,
       'EmailAddress': _email.text.trim(),
       'HandPhone': _phone.text.trim(),
@@ -352,6 +356,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'name': name,
         'emailAddress': _email.text.trim(),
         'handPhone': _phone.text.trim(),
+        if (!s.isInstructor) 'icNo': _ic.text.trim(),
         'gender': _gender,
         'address1': _address.text,
         'postalCode': _postal.text,
@@ -546,6 +551,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               field('Name', _name, Ion.personOutline),
               field('Email', _email, Ion.mailOutline, keyboard: TextInputType.emailAddress),
               field('Mobile No', _phone, Ion.callOutline, keyboard: TextInputType.phone),
+              if (!session.isInstructor) field('IC No', _ic, Ion.idCardOutline),
               label('Gender'),
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
@@ -697,7 +703,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     child: Text('Read-only',
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c.textMuted, letterSpacing: 1)),
                   ),
-                  readRow('IC No', _u('icNo')),
+                  if (session.isInstructor) readRow('IC No', _u('icNo')),
                   readRow('Registration No', _u('code')),
                   readRow('Grade', _u('currentGrade')),
                 ]),

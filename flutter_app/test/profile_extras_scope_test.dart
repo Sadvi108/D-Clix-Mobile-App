@@ -18,9 +18,8 @@ import 'package:dclix_app/theme/theme_provider.dart';
 /// The multipart parts, tolerating the extra `content-type` /
 /// `content-transfer-encoding` headers package:http adds for an empty value.
 Map<String, String> partsOf(http.Request request) => {
-      for (final m in RegExp(
-              r'name="([^"\r\n]+)"((?:\r\n[a-z-]+: [^\r\n]+)*)\r\n\r\n([\s\S]*?)\r\n--')
-          .allMatches(request.body))
+      for (final m
+          in RegExp(r'name="([^"\r\n]+)"((?:\r\n[a-z-]+: [^\r\n]+)*)\r\n\r\n([\s\S]*?)\r\n--').allMatches(request.body))
         m.group(1)!: m.group(3)!,
     };
 
@@ -35,7 +34,15 @@ void main() {
     original = ApiService.client;
     writes = [];
     extrasFail = false;
-    session.authData = {'id': 100, 'userId': 100, 'userType': 3, 'name': 'Test Member', 'branchId': 10, 'clubId': 20};
+    session.authData = {
+      'id': 100,
+      'userId': 100,
+      'userType': 3,
+      'name': 'Test Member',
+      'icNo': 'OLD-IC',
+      'branchId': 10,
+      'clubId': 20,
+    };
     session.myInfo = null;
     session.studentAddtnlInfo = null;
     session.setActiveStudent(name: null, id: null);
@@ -50,7 +57,13 @@ void main() {
       } else {
         data = <String, dynamic>{};
       }
-      return http.Response(jsonEncode({'status': 200, 'meta': {'code': 200}, 'data': data}), 200);
+      return http.Response(
+          jsonEncode({
+            'status': 200,
+            'meta': {'code': 200},
+            'data': data
+          }),
+          200);
     });
   });
   tearDown(() => ApiService.client = original);
@@ -82,14 +95,24 @@ void main() {
     await settle(tester);
   }
 
-  Finder input(String hint) =>
-      find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == hint);
+  Finder input(String hint) => find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == hint);
 
   testWidgets('loaded extras are sent back untouched', (tester) async {
     await open(tester);
     await save(tester);
     expect(partsOf(writes.single)['Schoolname'], 'Test School');
     expect(partsOf(writes.single)['Healthstatus'], 'Test health note');
+  });
+
+  testWidgets('a student can edit their IC number', (tester) async {
+    await open(tester);
+    expect(input('IC No'), findsOneWidget);
+    await tester.ensureVisible(input('IC No'));
+    await tester.enterText(input('IC No'), 'NEW-IC-99');
+    await save(tester);
+
+    expect(partsOf(writes.single)['IcNo'], 'NEW-IC-99');
+    expect(session.authData?['icNo'], 'NEW-IC-99');
   });
 
   testWidgets('a field the member cleared is sent empty, not dropped', (tester) async {
@@ -112,8 +135,7 @@ void main() {
     expect(parts.containsKey('Healthstatus'), isFalse);
   });
 
-  testWidgets('the identity snapshot is taken when the form opens, not on first read',
-      (tester) async {
+  testWidgets('the identity snapshot is taken when the form opens, not on first read', (tester) async {
     // A lazily-initialised snapshot would capture whoever is signed in at the
     // moment it is first read — i.e. the NEW account — and wave the stale form
     // through. Switching before anything reads it must still be caught.

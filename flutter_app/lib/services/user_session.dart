@@ -1307,11 +1307,18 @@ class UserSession extends ChangeNotifier {
         if (d is Map) studentAddtnlInfo = Map<String, dynamic>.from(d);
       }));
     }
-    // /Outstanding/Fetch returns unpaid invoices — branch-wide for
-    // instructors, personal for students. We load it for everyone so the
-    // dueAmount/invoiceCount getters have a reliable live source even if
-    // /Reports/HomePageStats omits those fields.
-    futures.add(_loadOutstanding());
+    // /Outstanding/Fetch is personal for students but branch-wide for
+    // instructors. ViewInvoices therefore gates the request itself for an
+    // instructor, not just the card/report that renders its result.
+    if (!isInstructor || allowViewInvoices) {
+      futures.add(_loadOutstanding());
+    } else {
+      // Never retain rows from a previous branch/session after access is
+      // revoked by the club master.
+      outstandingList = null;
+      outstandingRaw = null;
+      outstandingError = null;
+    }
     // Class-booking endpoints — power student schedule + home Today's Class.
     if (!isInstructor) {
       futures.add(_safeGet('/ClassBooking/NextBookings').then((d) {

@@ -110,7 +110,13 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
   /// The dues card counts the very invoices it navigates to. HomePageStats' totals do not
   /// agree with the `/Outstanding/Fetch` list behind the card (probed live 2026-08-10:
   /// 3 invoices / RM 420 vs 649 / RM 47,365), so one query feeds both.
-  late final _dues = useApi(() => RnApi.outstanding());
+  late final _dues = useApi<List<Map<String, dynamic>>>(() async {
+    // ViewInvoices is a data-access switch, not only a presentation switch.
+    // Do not ask the branch-wide outstanding endpoint for records an
+    // instructor is not allowed to see — including during pull/live refresh.
+    if (!UserSession.instance.allowViewInvoices) return const [];
+    return RnApi.outstanding();
+  });
 
   @override
   void initState() {
@@ -321,7 +327,8 @@ class _InstructorHomeScreenState extends State<InstructorHomeScreen>
                   grid([
                     for (final t in _tiles.where((t) =>
                         t.group == group &&
-                        (t.id != 'collections' || session.allowViewCollections)))
+                        (t.id != 'collections' || session.allowViewCollections) &&
+                        (t.id != 'missing-invoice' || session.allowViewInvoices)))
                       PremiumTile(icon: t.icon, tint: t.color, label: t.label, onTap: () => _onTile(t)),
                   ]),
                 ],
