@@ -76,8 +76,13 @@ class Api {
   static Future<dynamic> classBookingNextBookings() =>
       ApiService.get('/ClassBooking/NextBookings');
 
-  static Future<dynamic> classBookingGetBookings() =>
-      ApiService.get('/ClassBooking/GetBookings');
+  /// All bookings, past and future. Without [studentId] the server answers for
+  /// the token holder; a guardian must name the child (contract:
+  /// docs/superpowers/specs/2026-07-29-class-booking-contract.md).
+  static Future<dynamic> classBookingGetBookings({Object? studentId}) =>
+      ApiService.get(studentId == null
+          ? '/ClassBooking/GetBookings'
+          : '/ClassBooking/GetBookings?studentId=${_enc(studentId)}');
 
   static Future<dynamic> classBookingBookNow(Map<String, dynamic> body) =>
       ApiService.post('/ClassBooking/BookNow', body);

@@ -131,7 +131,18 @@ class UserSession extends ChangeNotifier {
     activeStudentId = null;
     siblings = null;
     paymentLockUntil = null;
+    _sessionEpoch++;
   }
+
+  int _sessionEpoch = 0;
+
+  /// Bumped whenever *who the app is acting for* changes: login, logout,
+  /// branch switch, or a guardian picking a different child.
+  ///
+  /// A screen that awaits the network reads this before the first await and
+  /// again before it mutates; if it moved, the reply belongs to someone else
+  /// and the write must be abandoned. Parity review round 4.
+  int get sessionEpoch => _sessionEpoch;
 
   /// Set (or clear, with null) the active student filter. Pure client-side,
   /// no network — instantly re-scopes every list via [notifyListeners].
@@ -139,6 +150,7 @@ class UserSession extends ChangeNotifier {
     activeStudentName =
         (name != null && name.trim().isNotEmpty) ? name.trim() : null;
     activeStudentId = id;
+    _sessionEpoch++;
     notifyListeners();
   }
 

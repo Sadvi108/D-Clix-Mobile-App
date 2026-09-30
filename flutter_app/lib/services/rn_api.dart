@@ -136,7 +136,8 @@ class RnApi {
   static Future<List<Map<String, dynamic>>> invoiceTypes() async => _rows(await Api.listingInvoceTypes());
 
   // ── Class booking ──
-  static Future<List<Map<String, dynamic>>> getBookings() async => _rows(await Api.classBookingGetBookings());
+  static Future<List<Map<String, dynamic>>> getBookings({Object? studentId}) async =>
+      _rows(await Api.classBookingGetBookings(studentId: studentId));
 
   // ── Instructor: collections ──
   static Future<Map<String, dynamic>?> collectionCount() async => _map(await Api.outstandingCollectionCount());

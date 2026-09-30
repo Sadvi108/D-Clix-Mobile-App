@@ -35,11 +35,35 @@ class BookClassScreen extends StatefulWidget {
 }
 
 class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClassScreen> {
-  final int _studentId = _intOf(UserSession.instance.authData?['id']);
+  // Book for the child the guardian picked, not whoever holds the token. The
+  // package, the entitlement count, the existing bookings behind the duplicate
+  // check and the label on screen must all name this same student, or the app
+  // can show one child while booking for another.
+  late int _studentId = _subjectId();
+  static int _subjectId() =>
+      UserSession.instance.currentStudentId ?? _intOf(UserSession.instance.authData?['id']);
+
+  /// Whose booking screen this is, for the header line.
+  String get _subjectName => UserSession.instance.displayName;
   late final _centers = useApi(RnApi.trainingCenters);
   late final _instructors = useApi(RnApi.instructors);
   late final _info = useApi(RnApi.myInfo);
-  late final _bookings = useApi(RnApi.getBookings);
+  // Scoped to the subject: a guardian's token would otherwise answer with the
+  // account holder's bookings and the duplicate check would pass on a class the
+  // selected child already has.
+  late final _bookings = useApi(() async {
+    // Read strictly, not through RnApi's lenient `_rows`: a `data` that is not
+    // a list means the duplicate check is UNKNOWN, and an empty list would read
+    // as "nothing booked yet" and wave a repeat booking through.
+    // Parity review round 4.
+    final raw = unwrapData(
+        await Api.classBookingGetBookings(studentId: _studentId == 0 ? null : _studentId));
+    if (raw is! List) throw StateError('bookings response was not a list');
+    return raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).where((r) {
+      final id = _intOf(r['studentId'] ?? r['studentID']);
+      return id == 0 || id == _studentId; // rows without an id are already token-scoped
+    }).toList();
+  });
   late final _pkg = useApi<Map<String, dynamic>?>(() async {
     if (_studentId == 0) return null;
     final d = unwrapData(await Api.classBookingPackageInfo(_studentId));
@@ -51,6 +75,14 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
         month: _month, year: _year, tCenterId: _tCenterId, instructorId: _instructorId));
     return d is List ? d.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const [];
   }, autoRun: false);
+
+  late final VoidCallback _watchSubject = () {
+    final now = _subjectId();
+    if (!mounted || now == _studentId) return;
+    setState(() => _studentId = now);
+    _pkg.reload();
+    _bookings.reload();
+  };
 
   int _tCenterId = 0;
   int _instructorId = 0;
@@ -77,6 +109,13 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
     _bookings;
     _pkg;
     _slots;
+    UserSession.instance.addListener(_watchSubject);
+  }
+
+  @override
+  void dispose() {
+    UserSession.instance.removeListener(_watchSubject);
+    super.dispose();
   }
 
   /// Default the centre to the student's own, the instructor to their own — once MyInfo has
@@ -107,6 +146,26 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
     _slots.reload();
   }
 
+  /// Why a booking cannot be judged right now, or null when it can.
+  ///
+  /// Both the package AND the existing bookings have to be known for the
+  /// CURRENT subject first: a package still loading is not "no quota", a failed
+  /// duplicate lookup is not "nothing booked yet", and an empty PackageInfo is
+  /// not an unlimited membership. Each of those, read optimistically, books a
+  /// class the student is not entitled to. Parity review round 4.
+  String? get _notReadyReason {
+    if (_pkg.loading || _bookings.loading) {
+      return "Still loading this student's package and bookings. Try again in a moment.";
+    }
+    if (_pkg.error != null || !isUsablePackage(_pkg.data)) {
+      return "Your package could not be loaded, so remaining classes can't be checked. Try again in a moment.";
+    }
+    if (_bookings.error != null || _bookings.data == null) {
+      return "Your existing bookings could not be loaded, so a repeat booking can't be ruled out. Try again in a moment.";
+    }
+    return null;
+  }
+
   Future<void> _confirm(Map<String, dynamic> chosen, bool alreadyBooked) async {
     if (_studentId == 0 || _booking) return;
     if (_selectedDate == null) {
@@ -117,26 +176,123 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
       await notify(context, 'Already booked', "You've already booked this class on that date. Pick another date.");
       return;
     }
+    if (!UserSession.instance.allowClassBooking) {
+      await notify(context, 'Cannot book',
+          'Your academy has switched class booking off for this account.');
+      return;
+    }
+    final blocked = _notReadyReason;
+    if (blocked != null) {
+      await notify(context, 'Cannot book', blocked);
+      return;
+    }
+
+    // Everything the booking is made of, read ONCE before the first await.
+    // A guardian who switches child (or logs out, or switches branch) while the
+    // quota call is in flight would otherwise have this screen's newer subject
+    // posted against the older subject's quota. The snapshot keeps the request
+    // internally consistent; `stale()` abandons it outright when the identity
+    // behind it has moved. Parity review round 4.
+    final session = UserSession.instance;
+    final epoch = session.sessionEpoch;
+    final studentId = _studentId;
+    final date = _selectedDate!;
+    final timeId = _intOf(chosen['id']);
+    final tCenterId = _tCenterId;
+    final instructorId = _instructorId;
+    final month = _month;
+    final year = _year;
+    final pkg = _pkg.data;
+    final packageType = pkg?['packageType']?.toString();
+    final packageId = _intOf(pkg?['packageId']);
+    final typeId = packageTypeId(packageType);
+    final quota = packageQuota(pkg) ?? 0;
+
+    /// True once this booking no longer describes who the app is acting for —
+    /// the screen is gone, the session changed, or the subject changed.
+    bool stale() => !mounted || session.sessionEpoch != epoch || _studentId != studentId;
+
+    /// The club's booking switch is read again right before the mutation, not
+    /// only when the screen was built: a session refresh can revoke it while a
+    /// quota call is in flight. Parity review F6.
+    bool denied() => !session.allowClassBooking;
+
     setState(() => _booking = true);
     try {
-      final date = _selectedDate!;
+      // Quota-limited packages: ask the server what this student has already
+      // booked this month before adding another (the old app disabled the
+      // calendar instead; refusing at confirm time is the same guarantee).
+      if (typeId == 1 || typeId == 2) {
+        var booked = 0;
+        if (packageId != 0) {
+          try {
+            final counted = await Api.classBookingBookingCountByPackageSession(
+              packageTypeId: typeId,
+              packageId: packageId,
+              studentId: studentId,
+              month: month,
+              year: year,
+            );
+            final rows = unwrapData(counted);
+            if (rows is! List) {
+              // Not a list: the count is unknown, which is not the same as zero.
+              throw StateError('quota response was not a list');
+            }
+            booked = rows.length;
+          } catch (_) {
+            // Fail closed: an unreachable quota is not proof of an unused one.
+            if (!stale() && mounted) {
+              await notify(context, 'Cannot book',
+                  "Couldn't check how many classes are left on this package. Try again in a moment.");
+            }
+            return;
+          }
+        }
+        // The count that just came back describes `studentId`. If the subject
+        // moved while it was in flight, it says nothing about the new one.
+        if (stale()) return;
+        final allowance = bookingAllowance(
+          typeId: typeId,
+          sessionId: packageId,
+          noOfClasses: quota,
+          alreadyBooked: booked,
+        );
+        if (allowance.blocked) {
+          if (mounted) await notify(context, 'Cannot book', allowance.reason!);
+          return;
+        }
+      }
+      // Last gate before the only mutation on this screen.
+      if (stale()) return;
+      if (denied()) {
+        if (mounted) {
+          await notify(context, 'Cannot book',
+              'Your academy has switched class booking off for this account.');
+        }
+        return;
+      }
       await Api.classBookingBookNow(bookNowBody(
-        tCenterId: _tCenterId,
-        instructorId: _instructorId,
-        studentId: _studentId,
-        timeId: _intOf(chosen['id']),
+        tCenterId: tCenterId,
+        instructorId: instructorId,
+        studentId: studentId,
+        timeId: timeId,
         date: date,
         slotName: '${chosen['name'] ?? ''}',
-        packageType: _pkg.data?['packageType']?.toString(),
+        packageType: packageType,
+        sessionId: packageId,
         centerName: '${chosen['centerName'] ?? ''}',
         instructorName: '${chosen['instructorName'] ?? ''}',
       ));
       final when = DateTime.parse('${date}T00:00:00');
+      if (stale()) return;
       setState(() {
         _selectedSlot = null;
         _selectedDate = null;
       });
+      // The booking just used a class: re-read both the duplicate list and the
+      // package so the next attempt counts this one.
       _bookings.reload();
+      _pkg.reload();
       if (!mounted) return;
       await notify(context, 'Class booked',
           '${chosen['name']}\n${_wdLong[when.weekday - 1]}, ${when.day.toString().padLeft(2, '0')} ${_monthsShort[when.month - 1]} · ${chosen['centerName'] ?? ''}');
@@ -151,6 +307,34 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
   Widget build(BuildContext context) {
     final c = context.appColors;
     final bottom = MediaQuery.paddingOf(context).bottom;
+    // The club can switch class booking off per account (old
+    // `HomePageViewModel.cs:370`). Blocked at the screen rather than at each
+    // entry point, so a deep link or an older tile cannot walk around it.
+    // Parity review F6.
+    if (!UserSession.instance.allowClassBooking) {
+      return Scaffold(
+        backgroundColor: c.background,
+        body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const RnHeader(title: 'Book a Class'),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Ion.calendarOutline, size: 44, color: c.textMuted),
+                const SizedBox(height: 14),
+                Text('Class booking is switched off',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                const SizedBox(height: 8),
+                Text('Your academy has not enabled booking for this account. They can turn it on for you.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, height: 19 / 13, color: c.textSecondary)),
+              ]),
+            ),
+          ),
+        ]),
+      );
+    }
     _applyDefaults();
 
     final centers = _centers.data ?? const <Map<String, dynamic>>[];
@@ -211,14 +395,21 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
           child: Text(t, style: TextStyle(fontSize: 13, color: c.textSecondary)),
         );
 
-    final canConfirm = chosen != null && _selectedDate != null && !alreadyBooked && !_booking;
+    // The package and the booking list gate the button too, not just the
+    // handler: a Confirm that looks live while the entitlement is unknown
+    // invites the tap it then has to refuse.
+    final notReady = _notReadyReason;
+    final canConfirm =
+        chosen != null && _selectedDate != null && !alreadyBooked && !_booking && notReady == null;
     final confirmLabel = chosen == null
         ? 'Select a session'
         : alreadyBooked
             ? 'Already booked'
             : _selectedDate == null
                 ? 'Pick a date'
-                : 'Confirm · ${_wdDayMon(DateTime.parse('${_selectedDate!}T00:00:00'))}';
+                : notReady != null
+                    ? (_pkg.loading || _bookings.loading ? 'Checking your package…' : 'Cannot book right now')
+                    : 'Confirm · ${_wdDayMon(DateTime.parse('${_selectedDate!}T00:00:00'))}';
 
     return Scaffold(
       backgroundColor: c.background,
@@ -228,6 +419,21 @@ class _BookClassScreenState extends State<BookClassScreen> with UseApi<BookClass
           child: ListView(
             padding: EdgeInsets.fromLTRB(Gaps.xl, Gaps.xl - 18, Gaps.xl, 150 + bottom),
             children: [
+              // Say whose classes these are: a guardian switching children must
+              // never be left guessing who the booking is for.
+              if (UserSession.instance.activeStudentName != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Row(children: [
+                    Icon(Ion.person, size: 14, color: c.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('Booking for $_subjectName',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                    ),
+                  ]),
+                ),
               label('Training Center'),
               if (_centers.loading)
                 const RnSpinner(vertical: 12)

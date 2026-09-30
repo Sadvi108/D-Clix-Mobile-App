@@ -104,6 +104,82 @@ String? preferredDate(List<DateTime> options, Set<String> taken) {
   return isoDate(options.first);
 }
 
+/// The old app mapped `PackageInfo.packageType` to an id: "Package" → 1,
+/// "Session" → 2, anything else (Monthly and friends) → 3. Only 1 and 2 carry a
+/// class quota (`BookClassPageViewModel.cs:155,488`).
+int packageTypeId(String? packageType) {
+  final n = (packageType ?? '').trim().toLowerCase();
+  if (n == 'package') return 1;
+  if (n == 'session') return 2;
+  return 3;
+}
+
+/// The class quota on a PackageInfo reply, or null when it carries no quota
+/// field at all.
+///
+/// Absent is not zero. Zero means unlimited (the old UI showed "NA"), so
+/// reading a missing field as 0 turns a paid, quota-limited package into an
+/// unlimited one. Parity review round 4.
+int? packageQuota(Map<String, dynamic>? pkg) {
+  if (pkg == null) return null;
+  for (final k in const ['noOfCLasses', 'noOfClasses', 'noOfClass']) {
+    final v = pkg[k];
+    if (v == null) continue;
+    final n = v is num ? v.toInt() : int.tryParse(v.toString().trim());
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/// Whether a PackageInfo reply is complete enough to judge an entitlement.
+///
+/// An empty object — or one the server answered without a `packageType` — is
+/// NOT proof of an unlimited membership. Neither is a quota-limited package
+/// that never states its quota. Treating either as "Monthly, unlimited" lets a
+/// student book past their package, so an unusable reply fails closed instead.
+/// Parity review round 4.
+bool isUsablePackage(Map<String, dynamic>? pkg) {
+  if (pkg == null) return false;
+  final type = (pkg['packageType'] ?? '').toString().trim();
+  if (type.isEmpty) return false;
+  final id = packageTypeId(type);
+  return (id != 1 && id != 2) || packageQuota(pkg) != null;
+}
+
+/// Whether this member may book another class this month.
+///
+/// Mirrors the old entitlement rules:
+///  - only package types 1 and 2 are quota-limited;
+///  - `noOfClasses == 0` means unlimited (the old UI showed "NA");
+///  - a quota-limited member with no assigned package (`sessionId == 0`) cannot
+///    book at all (`BookClassPageViewModel.cs:659`);
+///  - otherwise remaining = quota − already booked, and 0 blocks booking.
+({bool blocked, int? remaining, String? reason}) bookingAllowance({
+  required int typeId,
+  required int sessionId,
+  required int noOfClasses,
+  required int alreadyBooked,
+}) {
+  if (typeId != 1 && typeId != 2) return (blocked: false, remaining: null, reason: null);
+  if (sessionId == 0) {
+    return (
+      blocked: true,
+      remaining: null,
+      reason: 'No package is assigned to this student yet. Your academy can set one up.',
+    );
+  }
+  if (noOfClasses <= 0) return (blocked: false, remaining: null, reason: null);
+  final left = noOfClasses - alreadyBooked;
+  if (left <= 0) {
+    return (
+      blocked: true,
+      remaining: 0,
+      reason: 'All $noOfClasses classes in this package are booked for this month.',
+    );
+  }
+  return (blocked: false, remaining: left, reason: null);
+}
+
 /// Body for `POST /ClassBooking/BookNow` — a `BookClassViewModel`.
 Map<String, dynamic> bookNowBody({
   required int tCenterId,
@@ -113,6 +189,7 @@ Map<String, dynamic> bookNowBody({
   required String date, // yyyy-MM-dd
   required String slotName,
   String? packageType,
+  int sessionId = 0,
   String centerName = '',
   String instructorName = '',
   String remarks = 'Booked via app',
@@ -124,7 +201,7 @@ Map<String, dynamic> bookNowBody({
     'instructorId': instructorId,
     'studentId': studentId,
     'packageType': packageType,
-    'sessionId': 0,
+    'sessionId': sessionId,
     'remarks': remarks,
     // An empty timeSlots is the ONE thing the server rejects ("Invalid Request").
     'timeSlots': [
