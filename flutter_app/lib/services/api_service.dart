@@ -300,6 +300,12 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     return null;
   }
 
+  /// Form parts that must never reach a log, however useful the rest is.
+  static bool _isSecretField(String name) {
+    final n = name.toLowerCase();
+    return n.contains('password') || n.contains('token') || n.contains('secret');
+  }
+
   /// multipart/form-data POST — for endpoints that reject JSON
   /// (e.g. /Profile/UpdateProfile).
   ///
@@ -324,7 +330,12 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     _log('📤 POST(multipart): $url');
     // Debug builds only, and never the Authorization header: comparing the app's form parts
     // against the same call made in Swagger is how a rejected request gets settled.
-    _log('📤 form: ${{...fields, ...repeatedFields}}');
+    // A credential part (UpdateProfile carries NewPassword) is never one of the
+    // values worth comparing, so it is masked rather than printed.
+    _log('📤 form: ${{
+      for (final e in {...fields, ...repeatedFields}.entries)
+        e.key: _isSecretField(e.key) ? '•••' : e.value
+    }}');
     final req = http.MultipartRequest('POST', url);
     if (_token != null) req.headers['Authorization'] = 'Bearer $_token';
     fields.forEach((k, v) {
