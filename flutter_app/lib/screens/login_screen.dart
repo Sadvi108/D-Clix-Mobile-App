@@ -9,6 +9,7 @@ import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../theme/theme_provider.dart';
+import '../widgets/gradient_button.dart';
 import '../widgets/rn_kit.dart';
 
 /// Port of `frontend/app/login.tsx` (Expo v2.11.1).
@@ -341,8 +342,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   c,
                   label: 'Password',
                   labelTrailing: Touchable(
-                    onPress: () => notify(context, 'Forgot password',
-                        "Password resets are handled by your academy — please contact them and they'll reset it for you."),
+                    onPress: _openRecovery,
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text('Forgot?',
@@ -573,6 +573,19 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  /// Password recovery, as the old app had it: the member proves who they are
+  /// with their IC / student ID and the mobile number on their account, and the
+  /// server decides what to send. The app only relays the server's answer.
+  Future<void> _openRecovery() {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: context.appColors.overlay,
+      builder: (_) => const _RecoverySheet(),
+    );
+  }
+
   Future<void> _showBranchSheet() {
     return showModalBottomSheet<void>(
       context: context,
@@ -688,5 +701,194 @@ class _BranchSheet extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+
+/// Asks the server to start a password reset. Mirrors the old
+/// PasswordRecoveryPage: Username = IC / student ID, Password = mobile number,
+/// AccessMethod = 0, DeviceId = "".
+class _RecoverySheet extends StatefulWidget {
+  const _RecoverySheet();
+  @override
+  State<_RecoverySheet> createState() => _RecoverySheetState();
+}
+
+class _RecoverySheetState extends State<_RecoverySheet> {
+  final _icCtrl = TextEditingController();
+  final _mobileCtrl = TextEditingController();
+  bool _busy = false;
+  String? _error;
+  String? _sent;
+
+  @override
+  void dispose() {
+    _icCtrl.dispose();
+    _mobileCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final ic = _icCtrl.text.trim(), mobile = _mobileCtrl.text.trim();
+    if (ic.isEmpty || mobile.isEmpty) {
+      setState(() => _error = 'Enter both your IC / student ID and your mobile number.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _sent = null;
+    });
+    try {
+      final resp = await Api.accountForgotPassword(
+          {'username': ic, 'password': mobile, 'accessMethod': 0, 'deviceId': ''});
+      final err = apiEnvelopeError(resp);
+      if (!mounted) return;
+      setState(() {
+        if (err != null) {
+          _error = err;
+        } else {
+          // The old app showed `Data` — that is where the server puts what it
+          // actually did ("Temporary password sent to your WhatsApp"). Only
+          // fall back to meta.message, and never claim delivery on an empty or
+          // malformed body.
+          final data = resp is Map ? resp['data'] : null;
+          final meta = resp is Map ? resp['meta'] : null;
+          final fromData = data is String ? data.trim() : '';
+          final fromMeta = (meta is Map ? meta['message'] : null)?.toString().trim() ?? '';
+          if (fromData.isNotEmpty && fromData != 'null') {
+            _sent = fromData;
+          } else if (fromMeta.isNotEmpty && fromMeta != 'null') {
+            _sent = fromMeta;
+          } else {
+            _error = "The server didn't confirm the reset. Please try again, or ask your academy.";
+          }
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final insets = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: insets),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+            Gaps.xl, 12, Gaps.xl, 16 + MediaQuery.paddingOf(context).bottom),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(Radii.xxl)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration:
+                    BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3)),
+              ),
+            ),
+            Text('Forgot password',
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: c.textPrimary)),
+            const SizedBox(height: 6),
+            Text('Enter the IC / student ID and mobile number on your account.',
+                style: TextStyle(fontSize: 13, color: c.textSecondary)),
+            const SizedBox(height: 14),
+            _RecoveryField(label: 'IC / Student ID', controller: _icCtrl, icon: Ion.card),
+            const SizedBox(height: 10),
+            _RecoveryField(
+                label: 'Mobile number',
+                controller: _mobileCtrl,
+                icon: Ion.call,
+                keyboard: TextInputType.phone),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Icon(Ion.alertCircle, size: 15, color: c.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(_error!,
+                        style: TextStyle(color: c.danger, fontSize: 12.5))),
+              ]),
+            ],
+            if (_sent != null) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Icon(Ion.checkmarkCircle, size: 15, color: c.success),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(_sent!,
+                        style: TextStyle(color: c.success, fontSize: 12.5))),
+              ]),
+            ],
+            const SizedBox(height: 16),
+            GradientButton(
+              label: _sent != null ? 'Done' : 'Send reset',
+              loading: _busy,
+              onPressed: _busy
+                  ? null
+                  : (_sent != null ? () => Navigator.pop(context) : _submit),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: Text('Still stuck? Your academy can reset it for you.',
+                  style: TextStyle(fontSize: 12, color: c.textMuted)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecoveryField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final IconData icon;
+  final TextInputType? keyboard;
+  const _RecoveryField(
+      {required this.label, required this.controller, required this.icon, this.keyboard});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label,
+          style: TextStyle(
+              fontSize: 11.5, fontWeight: FontWeight.w700, color: c.textSecondary)),
+      const SizedBox(height: 6),
+      Container(
+        decoration: BoxDecoration(
+          color: c.surfaceAlt,
+          borderRadius: BorderRadius.circular(Radii.md),
+          border: Border.all(color: c.border),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(children: [
+          Icon(icon, size: 16, color: c.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboard,
+              style: TextStyle(color: c.textPrimary, fontSize: 14),
+              decoration: const InputDecoration(
+                  border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 14)),
+            ),
+          ),
+        ]),
+      ),
+    ]);
   }
 }
