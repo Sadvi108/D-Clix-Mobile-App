@@ -7,6 +7,7 @@ import '../services/api.dart';
 import '../services/attendance_outcome.dart';
 import '../services/response_utils.dart';
 import '../services/rn_api.dart';
+import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
 import '../utils/qr_content.dart';
@@ -32,7 +33,9 @@ class QRScanScreen extends StatefulWidget {
 
 class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderStateMixin, UseApi<QRScanScreen> {
   late final _info = useApi(RnApi.myInfo);
-  late final MobileScannerController _camera =
+  // Created on first use so a blocked account never starts a camera.
+  MobileScannerController? _cameraCtl;
+  MobileScannerController get _camera => _cameraCtl ??=
       MobileScannerController(detectionSpeed: DetectionSpeed.noDuplicates, facing: CameraFacing.back);
   late final AnimationController _laser =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat(reverse: true);
@@ -42,6 +45,24 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
   bool _cameraFailed = false;
   bool _lock = false;
   _Result? _result;
+
+  /// Who this scan records attendance for. The old app sent 1 for a student
+  /// checking themselves in, 2 for an instructor checking themselves in, and 3
+  /// when an instructor scans a student's QR
+  /// (`ScanQRCodePageViewModel.cs:91` and `:236`). Sending 1 for everyone made
+  /// an instructor's scan look like a student's. Parity review F5.
+  late int _attendanceType = UserSession.instance.isInstructor ? 2 : 1;
+
+  /// The club can switch attendance off for an account; the old app then hid
+  /// the scanner entirely (`ScanQRCodePageViewModel.cs:88`). Parity review F6.
+  bool get _allowed => UserSession.instance.allowAttendance;
+
+  /// Only an instructor chooses between recording their own attendance and a
+  /// student's (`ScanQRCodePage.xaml:51,67`).
+  bool get _roleTabs => UserSession.instance.isInstructor;
+
+  /// Type 3 scans a student's printed QR; the others scan the centre poster.
+  bool get _scansStudentCode => _attendanceType == 3;
 
   /// Set when the server answers "Select your training class time".
   String? _classPickCode;
@@ -57,7 +78,7 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     _laser.dispose();
-    _camera.dispose();
+    _cameraCtl?.dispose();
     _manual.dispose();
     super.dispose();
   }
@@ -69,10 +90,10 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
   }
 
   /// One check-in attempt. `tTimeId` is only sent on the retry after the server asked which
-  /// class this is for. attendanceType 1 = student self check-in.
+  /// class this is for. The attendance type follows the scanner's role.
   Future<void> _submit(String raw, {int? tTimeId}) async {
     final value = raw.trim();
-    if (value.isEmpty || _busy || (_lock && tTimeId == null)) return;
+    if (value.isEmpty || _busy || !_allowed || (_lock && tTimeId == null)) return;
     _lock = true;
     if (_looksForeign(value)) {
       setState(() => _result = (ok: false, title: 'Not a D-CLIX QR', sub: 'Scan the QR poster at your training center.'));
@@ -80,7 +101,8 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
     }
     setState(() => _busy = true);
     try {
-      final resp = await Api.attendanceAdd({'qrCode': value, 'attendanceType': 1, 'tTimeId': tTimeId});
+      final resp =
+          await Api.attendanceAdd({'qrCode': value, 'attendanceType': _attendanceType, 'tTimeId': tTimeId});
       final outcome = AttendanceOutcome.parse(resp);
       if (!mounted) return;
       if (outcome.success) {
@@ -120,7 +142,9 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
             title: 'Invalid QR Code',
             sub: msg.isNotEmpty && msg != 'Invalid QR Code'
                 ? msg
-                : "Scan the D-CLIX centre poster (its code looks like TC-00001945). Your own student QR won't check you in."
+                : _scansStudentCode
+                    ? "Scan the student's D-CLIX QR (its code looks like ST-00022410), not the centre poster."
+                    : "Scan the D-CLIX centre poster (its code looks like TC-00001945). Your own student QR won't check you in."
           ));
     } catch (e) {
       if (mounted) setState(() => _result = (ok: false, title: 'Check-in failed', sub: friendlyError(e)));
@@ -129,16 +153,61 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
     }
   }
 
-  void _rescan() => setState(() {
-        _lock = false;
-        _result = null;
-        _classPickCode = null;
-        _slots = const [];
-        _manual.clear();
-      });
+  /// Back to a clean scan. Call inside a `setState`.
+  void _rescanState() {
+    _lock = false;
+    _result = null;
+    _classPickCode = null;
+    _slots = const [];
+    _manual.clear();
+  }
+
+  void _rescan() => setState(_rescanState);
+
+  /// Shown instead of the scanner when the club has switched attendance off
+  /// for this account. Parity review F6.
+  Widget _blocked(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(Gaps.xl),
+                child: Touchable(
+                  onPress: () => safeBack(context),
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(color: Color(0x1FFFFFFF), shape: BoxShape.circle),
+                    child: const Icon(Ion.close, size: 22, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+            const Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 32),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Ion.shieldCheckmark, size: 48, color: Color(0x99FFFFFF)),
+                  SizedBox(height: 16),
+                  Text('Check-in is switched off',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 8),
+                  Text('Your academy has not enabled QR attendance for this account. Ask them to turn it on.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Color(0xBFFFFFFF), fontSize: 13, height: 19 / 13)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
+    if (!_allowed) return _blocked(context);
     final c = context.appColors;
     final top = MediaQuery.paddingOf(context).top;
     final bottom = MediaQuery.paddingOf(context).bottom;
@@ -195,7 +264,11 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
                 ? 'Checking in…'
                 : 'Align the QR within the frame';
     final hint = result != null
-        ? (result.ok ? 'Attendance marked for today' : 'Make sure you scan the D-CLIX center QR')
+        ? (result.ok
+            ? 'Attendance marked for today'
+            : _scansStudentCode
+                ? "Make sure you scan the student's own D-CLIX QR"
+                : 'Make sure you scan the D-CLIX center QR')
         : picking
             ? 'Your academy needs to know which class this check-in is for'
             : 'Make sure the camera has good lighting';
@@ -264,6 +337,36 @@ class _QRScanScreenState extends State<QRScanScreen> with SingleTickerProviderSt
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: MediaQuery.sizeOf(context).height - top - 200),
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  // Instructors record their own attendance or a student's; the
+                  // choice is the attendance type the scan is sent with.
+                  if (_roleTabs && result == null && !picking)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 22),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        for (final t in const [(type: 2, label: 'Self'), (type: 3, label: 'Students')])
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            child: Touchable(
+                              onPress: _busy || _attendanceType == t.type
+                                  ? null
+                                  : () => setState(() {
+                                        _attendanceType = t.type;
+                                        _rescanState();
+                                      }),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+                                decoration: BoxDecoration(
+                                  color: _attendanceType == t.type ? c.primary : const Color(0x1FFFFFFF),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(t.label,
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ),
+                      ]),
+                    ),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 28),
                     child: Text(instruction,
