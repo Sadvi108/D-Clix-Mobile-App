@@ -15,10 +15,17 @@ bool isRequestNotification(Map n) =>
 
 /// OS notifications for club messages.
 ///
-/// The backend has NO push-token endpoint (confirmed against the live Swagger: 73 routes,
-/// none of them device registration), so server-initiated FCM/APNs is impossible. The app
-/// polls and raises LOCAL notifications instead, which the OS renders exactly like a remote
+/// The app polls and raises LOCAL notifications, which the OS renders exactly like a remote
 /// push — tray entry, heads-up banner and sound included.
+///
+/// CORRECTION (parity review F9): an earlier version of this comment said server push was
+/// "impossible because there is no push-token endpoint". That is wrong. There is no
+/// *dedicated* registration route in the Swagger, but the old app registered the device
+/// anyway — it put the FCM token in `DeviceId` on `/Account/Authenticate`
+/// (`LoginPageViewModel.cs:169,178`), so the backend has somewhere to keep one. What is
+/// genuinely unproven is delivery: this app has no Firebase dependency, so it has no token
+/// to send, and nothing here shows the backend actually sends to stored tokens. Treat
+/// server push as UNVERIFIED and needing Firebase + backend work, not as ruled out.
 ///
 /// Sound, per platform:
 ///   Android 8+  the CHANNEL owns the sound and vibration; content-level settings are

@@ -97,12 +97,18 @@ copy from `frontend/.env.example` if missing.
   filters at all*, while student 89623 (in that instructor's own roster for centre 1639) sees
   their two "Present" rows there via their own token. So `r-attendance.tsx` is permanently empty
   for instructors, and an instructor-facing register board is not possible either.
-- Notifications / alerts: **there is NO push-token registration route** — the live Swagger
-  (`/swagger/v1/swagger.json`, 69 paths) has only `MyNotifications`, `MyUnreadNotifications`,
-  `MyUnreadNotificationCount`, `NotificationDetails`, `Reply2Notification`,
-  `UpdateNotification2Read`, `UpdateNotificationAction`. Server-initiated FCM/APNs is therefore
-  impossible; the app polls and raises **local** OS notifications instead (60 s foreground,
-  ~15 min background). `/Profile/MyNotifications` rows (probed prod 2026-09-03, the student test account):
+- Notifications / alerts: there is no *dedicated* push-token registration route — the live
+  Swagger (`/swagger/v1/swagger.json`, 69 paths) has only `MyNotifications`,
+  `MyUnreadNotifications`, `MyUnreadNotificationCount`, `NotificationDetails`,
+  `Reply2Notification`, `UpdateNotification2Read`, `UpdateNotificationAction`. This file used to
+  conclude that server push was therefore **impossible**; that conclusion was wrong and is
+  withdrawn (parity review F9). The previous Xamarin app registered its device by putting the
+  FCM token in `DeviceId` on `/Account/Authenticate` (`LoginPageViewModel.cs:169,178`), so the
+  backend already has a place to store one. What remains unproven is **delivery**: this app has
+  no Firebase dependency and so sends no token, and nothing has been observed showing the
+  backend pushing to stored tokens. Server push is UNVERIFIED, not ruled out; it needs Firebase
+  config plus a backend sender. Until then the app polls and raises **local** OS notifications
+  (60 s foreground, ~15 min background). `/Profile/MyNotifications` rows (probed prod 2026-09-03, the student test account):
   **`notificationType` is ALWAYS `""`**, `text` is a short subject from a fixed set
   (`Reminder`, `Class Activity`, `ClassReplacement`), and the real content is `value` — in
   **Malay** ("Sila jelaskan yuran tertunggak RM85.00 anda secepat mungkin"). So
