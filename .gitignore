@@ -161,3 +161,19 @@ credentials.json
 # (The rule above must be `.vscode/*`, not `.vscode/`: git does not descend into an ignored
 # directory, so a negation for a file inside one never matches.)
 !.vscode/launch.json
+
+# Generated architecture diagram and its visual checks — 825 KB of HTML plus four
+# full-page PNGs, rebuilt from the code by the diagram tool. CODEBASE.md already
+# describes them as untracked; committing them would make every regeneration a
+# large, unreviewable binary diff.
+docs/diagrams/
+
+# Ad-hoc exports written while working (translation reviews, one-off reports).
+# Anything worth keeping gets committed somewhere deliberate instead.
+outputs/
+
+# Tool-local run configuration, the same file the shared .vscode/launch.json
+# replaced once already (see the note above). Ignoring the directory, not just the
+# file: if a shared .claude/ config is ever wanted, add a `!` exception for it here
+# rather than dropping this rule, since git will not descend into it otherwise.
+.claude/
