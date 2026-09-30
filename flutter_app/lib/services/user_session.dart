@@ -121,6 +121,18 @@ class UserSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Everything tied to *which account or child* is being acted on.
+  ///
+  /// Cleared together at every identity boundary — logout, login and branch
+  /// switch — so a picked child can never survive into the next session and
+  /// silently become the subject of prepay, booking or the header name.
+  void _clearAccountScoped() {
+    activeStudentName = null;
+    activeStudentId = null;
+    siblings = null;
+    paymentLockUntil = null;
+  }
+
   /// Set (or clear, with null) the active student filter. Pure client-side,
   /// no network — instantly re-scopes every list via [notifyListeners].
   void setActiveStudent({String? name, Object? id}) {
@@ -615,23 +627,48 @@ class UserSession extends ChangeNotifier {
     return scopeToSelf(rows);
   }
 
-  /// Narrow any multi-student row list to [activeStudentName]. Matches the
-  /// row's `studentName` or `name` field (case-insensitive). When no active
-  /// student is set, or no row matches, returns the list unchanged.
+  /// Narrow any multi-student row list to the picked child.
+  ///
+  /// A row that names someone — it carries a student id or a name — is only
+  /// kept when that identity is the picked child. Mismatched rows are dropped
+  /// however few of them there are: showing sibling B's receipts under sibling
+  /// A's name is worse than showing none.
+  ///
+  /// Rows that carry no identity at all are the server's own token-scoped
+  /// answer (it already knows who asked), so a list entirely of those is left
+  /// alone. Matching prefers the stable id and falls back to the name, so a
+  /// selection made by id still scopes when the rows carry no names.
   List<dynamic> filterByActiveStudent(List<dynamic>? rows) {
     final list = rows ?? const [];
-    final target = activeStudentName;
-    if (target == null || list.isEmpty) return list;
-    final t = target.toUpperCase();
-    final scoped = list.where((r) {
+    final wantId = activeStudentId?.toString().trim();
+    final wantName = activeStudentName?.trim().toUpperCase();
+    final haveId = wantId != null && wantId.isNotEmpty;
+    final haveName = wantName != null && wantName.isNotEmpty;
+    if (list.isEmpty || (!haveId && !haveName)) return list;
+
+    String idOf(Map r) =>
+        (r['studentId'] ?? r['studentID'] ?? r['stuId'] ?? '').toString().trim();
+    String nameOf(Map r) => (r['studentName'] ?? r['name'] ?? r['receiverName'] ?? '')
+        .toString()
+        .trim()
+        .toUpperCase();
+    bool sameId(String a, String b) {
+      final x = num.tryParse(a), y = num.tryParse(b);
+      return (x != null && y != null) ? x == y : a == b;
+    }
+
+    bool identified(dynamic r) => r is Map && (idOf(r).isNotEmpty || nameOf(r).isNotEmpty);
+    bool mine(dynamic r) {
       if (r is! Map) return false;
-      final n = (r['studentName'] ?? r['name'] ?? r['receiverName'] ?? '')
-          .toString()
-          .trim()
-          .toUpperCase();
-      return n == t;
-    }).toList();
-    return scoped.isNotEmpty ? scoped : list;
+      final id = idOf(r), nm = nameOf(r);
+      if (haveId && id.isNotEmpty) return sameId(id, wantId);
+      if (haveName && nm.isNotEmpty) return nm == wantName;
+      return false;
+    }
+
+    // Nothing in the list names anyone: the server already scoped it to the token.
+    if (!list.any(identified)) return list;
+    return list.where(mine).toList();
   }
 
   /// Total amount due — the "FEES DUE / total due amt" badge.
@@ -1154,6 +1191,8 @@ class UserSession extends ChangeNotifier {
         throw Exception('No access token returned');
       }
       ApiService.setToken(token);
+      // A previous session's child selection must not carry into this login.
+      _clearAccountScoped();
       authData = data;
       // Instructor auth payload omits clubCode/clubList; keep the code the
       // user entered at login so Switch Branch (and ChangeClub) can resolve it.
@@ -1509,6 +1548,8 @@ class UserSession extends ChangeNotifier {
       }
       await _persistAuth();
 
+      // The branch's roster is different, so the picked child goes with it.
+      _clearAccountScoped();
       myInfo = null;
       homeStats = null;
       clubStats = null;
@@ -1576,6 +1617,7 @@ class UserSession extends ChangeNotifier {
     unawaited(BackgroundPoll.cancel());
     unawaited(NotificationService.cancelAll());
     _clearPersistedAuth();
+    _clearAccountScoped();
     authData = null;
     myInfo = null;
     homeStats = null;
