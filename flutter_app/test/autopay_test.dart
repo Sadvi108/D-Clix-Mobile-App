@@ -70,6 +70,11 @@ void main() {
     });
   });
 
+  test('a card without a brand reads as Card, not "Your card"', () {
+    // Boost's sandbox sends no brand; the label is also used mid-sentence.
+    expect(const AutoPayMandate(AutoPayState.active, last4: '5000').label, 'Card •••• 5000');
+  });
+
   group('setup', () {
     test('POST /AutoPay/Enable returns the Boost card page from `data`', () async {
       ApiService.client = MockClient((req) async {

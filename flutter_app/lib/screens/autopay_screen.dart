@@ -104,28 +104,27 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: const Text('Turn off Auto Pay?'),
+        title: const Text('Remove your card?'),
         content: Text(
-            '${_m.label} will be unlinked, and you will pay your fees yourself from '
-            'Fees Due.'),
+            'Auto Pay will turn off and ${_m.label} will be removed. You will pay your '
+            'fees yourself from Fees Due.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Keep on')),
+              child: const Text('Cancel')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: TextButton.styleFrom(foregroundColor: c.danger),
-              child: const Text('Turn off')),
+              child: const Text('Yes, remove')),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    final label = _m.label;
     setState(() => _busy = true);
     try {
       await AutoPay.cancel();
       await _load();
-      _toast('Auto Pay is off. $label was unlinked.');
+      _toast('Card removed. Auto Pay is off.');
     } catch (e) {
       _toast(friendlyError(e));
     } finally {
@@ -280,7 +279,7 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
           'ON',
           c.success,
           'Auto Pay is on',
-          'Your invoices are paid from ${_m.label}.'
+          '${_m.label} is paying your invoices.'
         ),
       AutoPayState.failed => (
           'ACTION NEEDED',

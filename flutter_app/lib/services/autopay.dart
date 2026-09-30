@@ -72,9 +72,10 @@ class AutoPayMandate {
     );
   }
 
-  /// "Visa •••• 4242", or "Your card" when the server sent no details.
+  /// "Visa •••• 4242", or "Card •••• 5000" when the server sent no brand (Boost's sandbox
+  /// sends none).
   String get label {
-    final name = brand ?? 'Your card';
+    final name = brand ?? 'Card';
     return last4 == null ? name : '$name •••• $last4';
   }
 }
