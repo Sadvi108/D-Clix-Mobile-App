@@ -40,7 +40,9 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
       'eCenterId': null,
       'tCenterId': null,
       'sCenterId': null,
-      'transactionType': _type.isEmpty ? null : _type,
+      // Sending the picked type changed nothing on the phone. Like the production app, fetch
+      // everything once and match rows on the type's text in build (OutstandingPageViewModel.cs:86, :203, :291).
+      'transactionType': null,
     });
     final d = unwrapData(resp);
     return d is List ? d.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const [];
@@ -89,14 +91,18 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
     final c = context.appColors;
     final bottom = MediaQuery.paddingOf(context).bottom;
     final rows = _inv.data ?? const <Map<String, dynamic>>[];
-    final filtered = _pendingOnly ? rows.where((r) => r['paymentStatus'] == 'Pending').toList() : rows;
+    final filtered = rows
+        .where((r) => _type.isEmpty || r['transactionType'] == _type)
+        .where((r) => !_pendingOnly || r['paymentStatus'] == 'Pending')
+        .toList();
     final dueTotal = filtered.fold<num>(0, (s, r) => s + RnApi.number(r['dueAmount']));
     final selectedDue = filtered
         .where((r) => _selected.contains(_intOf(r['invoiceId'])))
         .fold<num>(0, (s, r) => s + RnApi.number(r['dueAmount']));
     final typeOptions = <RkOption>[
       (id: '', text: 'All'),
-      for (final t in _types.data ?? const <Map<String, dynamic>>[]) (id: '${t['id']}', text: '${t['text'] ?? ''}'),
+      // Keyed by text: a row names its type in words, never by the listing's id.
+      for (final t in _types.data ?? const <Map<String, dynamic>>[]) (id: '${t['text'] ?? ''}', text: '${t['text'] ?? ''}'),
     ];
 
     Widget centered(Widget child) => Center(child: Padding(padding: const EdgeInsets.all(40), child: child));
@@ -200,7 +206,6 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
                   _type = '$id';
                   _selected.clear();
                 });
-                _inv.reload();
               },
             ),
             const SizedBox(height: 10),

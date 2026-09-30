@@ -876,7 +876,8 @@ class _ROutstandingScreenState extends State<ROutstandingScreen> with UseApi<ROu
       'eCenterId': null,
       'tCenterId': null,
       'sCenterId': null,
-      'transactionType': _type.isEmpty ? null : _type,
+      // Filtered on the type's text in build, as Pay Your Dues is (OutstandingReportPageViewModel.cs:74, :140, :214).
+      'transactionType': null,
     }));
     return d is List ? d.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const [];
   });
@@ -891,7 +892,7 @@ class _ROutstandingScreenState extends State<ROutstandingScreen> with UseApi<ROu
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
-    final rows = _data.data ?? const <Row_>[];
+    final rows = (_data.data ?? const <Row_>[]).where((r) => _type.isEmpty || r['transactionType'] == _type).toList();
     final totalDue = rows.fold<num>(0, (s, r) => s + RnApi.number(r['dueAmount']));
     return ReportScaffold<Row_>(
       title: 'Outstanding',
@@ -905,12 +906,9 @@ class _ROutstandingScreenState extends State<ROutstandingScreen> with UseApi<ROu
           label: 'Filter By Transaction Type',
           placeholder: 'All',
           value: _type,
-          options: [(id: '', text: 'All'), for (final t in _types.data ?? const <Row_>[]) (id: '${t['id']}', text: '${t['text'] ?? ''}')],
+          options: [(id: '', text: 'All'), for (final t in _types.data ?? const <Row_>[]) (id: '${t['text'] ?? ''}', text: '${t['text'] ?? ''}')],
           loading: _types.loading,
-          onChange: (id, _) {
-            setState(() => _type = '$id');
-            _data.reload();
-          },
+          onChange: (id, _) => setState(() => _type = '$id'),
         ),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text('Total Invoice(s): ${rows.length}',
