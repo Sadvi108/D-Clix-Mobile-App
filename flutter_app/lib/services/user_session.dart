@@ -1000,6 +1000,53 @@ class UserSession extends ChangeNotifier {
     return ut != 3; // 3 = student/parent; 0 (and 2) = instructor
   }
 
+  // ---------------------------------------------------------------------------
+  // Server-side feature switches (parity review F6)
+  // ---------------------------------------------------------------------------
+  /// A login flag blocks a feature only when the server sends it and it is
+  /// explicitly false.
+  ///
+  /// The old app defaulted a missing switch to "denied" (`HasPermission`
+  /// returns false for an absent key, `UserDetailsModel.cs:32`). This backend
+  /// does not send every switch to every account, and defaulting to denied
+  /// would hide features that work today, so an absent flag means "no opinion".
+  bool _notDenied(Object? v) => !(v == false || v == 'false' || v == 0);
+
+  /// `isAllowAttendance` — QR check-in (old `ScanQRCodePageViewModel.cs:88`).
+  bool get allowAttendance => _notDenied(authData?['isAllowAttendance']);
+
+  /// `isClassBookingEnabled` — Book a Class (old `HomePageViewModel.cs:370`).
+  bool get allowClassBooking => _notDenied(authData?['isClassBookingEnabled']);
+
+  /// One entry of the login payload's `permissions` map, keyed by the legacy
+  /// `Permission` enum id. The map arrives keyed by number or by string
+  /// depending on the serializer; an absent entry stays allowed.
+  bool permissionAllowed(int id) {
+    final p = authData?['permissions'];
+    if (p is! Map) return true;
+    return _notDenied(p[id] ?? p['$id']);
+  }
+
+  /// `EnableOnlinePayment` (old `PaymentModePageViewModel.cs:134`).
+  bool get allowOnlinePayment => permissionAllowed(1);
+
+  /// `ViewInvoices` — outstanding report and the Home invoice tiles for
+  /// non-students (old `ReportsPageViewModel.cs:222`, `HomePageViewModel.cs:459`).
+  bool get allowViewInvoices => permissionAllowed(2);
+
+  /// `ViewReceipts` — receipts, payment slips and the collection lists
+  /// (old `ReportsPageViewModel.cs:241,267`, `OutstandingHomePageViewModel.cs:152`).
+  bool get allowViewReceipts => permissionAllowed(3);
+
+  /// `UpdateCollection` (old `OutstandingHomePageViewModel.cs:178`).
+  bool get allowUpdateCollection => permissionAllowed(4);
+
+  /// `ViewReimbursement` (old `ReportsPageViewModel.cs:293`).
+  bool get allowViewReimbursement => permissionAllowed(5);
+
+  /// `ViewContribution` (old `ReportsPageViewModel.cs:303`).
+  bool get allowViewContribution => permissionAllowed(6);
+
   /// Numeric student id to act on for per-student actions (e.g. prepay).
   /// A picked guardian child wins; otherwise the logged-in account's id.
   /// Returns null when neither is available.
