@@ -327,8 +327,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final fields = <String, String>{
       'Id': _u('id'),
       'UserId': _u('userId'),
-      // UpdateProfile owns this field for both member and instructor records.
-      'IcNo': _ic.text.trim(),
+      // Students own this profile field. Instructor records keep echoing the
+      // server value: this request model also serves staff accounts, and it is
+      // not yet confirmed that UpdateProfile persists IcNo for them.
+      'IcNo': s.isInstructor ? _u('icNo') : _ic.text.trim(),
       'Name': name,
       'EmailAddress': _email.text.trim(),
       'HandPhone': phone,
@@ -384,7 +386,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'name': name,
         'emailAddress': _email.text.trim(),
         'handPhone': phone,
-        'icNo': _ic.text.trim(),
+        if (!s.isInstructor) 'icNo': _ic.text.trim(),
         'gender': _gender,
         'address1': _address.text,
         'postalCode': _postal.text,
@@ -591,7 +593,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onChanged: (_) {
                     if (_phoneError != null) setState(() => _phoneError = validateProfilePhone(_phone.text));
                   }),
-              field('IC No', _ic, Ion.idCardOutline),
+              if (!session.isInstructor) field('IC No', _ic, Ion.idCardOutline),
               label('Gender'),
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
@@ -743,6 +745,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     child: Text('Read-only',
                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c.textMuted, letterSpacing: 1)),
                   ),
+                  if (session.isInstructor) readRow('IC No', _u('icNo')),
                   readRow('Registration No', _u('code')),
                   readRow('Grade', _u('currentGrade')),
                 ]),

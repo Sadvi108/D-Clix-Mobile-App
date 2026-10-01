@@ -122,20 +122,22 @@ void main() {
     expect(session.authData?['icNo'], 'NEW-IC-99');
   });
 
-  testWidgets('an instructor can edit their IC number', (tester) async {
+  // Not editable until it is confirmed that UpdateProfile persists IcNo for staff accounts:
+  // a mock that accepts every write cannot show that, and an edit the server ignores would
+  // still read as saved.
+  testWidgets('an instructor IC number is shown read-only and echoed unchanged', (tester) async {
     session.authData = {
       ...session.authData!,
       'userType': 0,
       'name': 'Test Instructor',
     };
     await open(tester);
-    expect(input('IC No'), findsOneWidget);
-    await tester.ensureVisible(input('IC No'));
-    await tester.enterText(input('IC No'), 'STAFF-IC-22');
+    expect(input('IC No'), findsNothing);
+    expect(find.text('OLD-IC'), findsOneWidget);
     await save(tester);
 
-    expect(partsOf(writes.single)['IcNo'], 'STAFF-IC-22');
-    expect(session.authData?['icNo'], 'STAFF-IC-22');
+    expect(partsOf(writes.single)['IcNo'], 'OLD-IC');
+    expect(session.authData?['icNo'], 'OLD-IC');
   });
 
   testWidgets('an invalid mobile number shows an inline error and is not saved', (tester) async {
