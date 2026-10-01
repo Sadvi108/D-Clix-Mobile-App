@@ -122,6 +122,22 @@ void main() {
     expect(session.authData?['icNo'], 'NEW-IC-99');
   });
 
+  testWidgets('an instructor can edit their IC number', (tester) async {
+    session.authData = {
+      ...session.authData!,
+      'userType': 0,
+      'name': 'Test Instructor',
+    };
+    await open(tester);
+    expect(input('IC No'), findsOneWidget);
+    await tester.ensureVisible(input('IC No'));
+    await tester.enterText(input('IC No'), 'STAFF-IC-22');
+    await save(tester);
+
+    expect(partsOf(writes.single)['IcNo'], 'STAFF-IC-22');
+    expect(session.authData?['icNo'], 'STAFF-IC-22');
+  });
+
   testWidgets('an invalid mobile number shows an inline error and is not saved', (tester) async {
     await open(tester);
     await tester.ensureVisible(input('Mobile No'));

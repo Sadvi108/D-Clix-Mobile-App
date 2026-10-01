@@ -7,6 +7,7 @@ import '../../services/rn_api.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/ion.dart';
 import '../../utils/qr_content.dart';
+import '../../utils/instructor_report_filters.dart';
 import '../../utils/training_schedule.dart';
 import '../../widgets/report_kit.dart';
 import '../../widgets/rn_kit.dart';
@@ -932,41 +933,72 @@ class _ROutstandingScreenState extends State<ROutstandingScreen> with UseApi<ROu
 }
 
 // ── r-attendance ───────────────────────────────────────────────────────────────
-String _fmtDateTime(dynamic x) {
-  final d = DateTime.tryParse('${x ?? ''}');
-  if (d == null) return '${x ?? ''}';
-  return '${fmtDateGB(x)} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-}
-
 class RAttendanceScreen extends StatefulWidget {
   const RAttendanceScreen({super.key});
   @override
   State<RAttendanceScreen> createState() => _RAttendanceScreenState();
 }
 
-class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAttendanceScreen> {
+class _RAttendanceScreenState extends State<RAttendanceScreen>
+    with UseApi<RAttendanceScreen> {
   Object? _centerId;
   Object? _timeId;
   Object? _studentId;
   DateTime _from = _monthStart();
   DateTime _to = _today();
+  ({
+    String centerName,
+    Object? timeId,
+    String timeLabel,
+    Map<String, dynamic>? student
+  })? _applied;
 
   late final _centers = useApi(RnApi.trainingCentres);
   late final _times = useApi<List<Row_>>(
-      () async => _centerId == null ? const <Row_>[] : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
+      () async => _centerId == null
+          ? const <Row_>[]
+          : await RnApi.trainingTimeByTcId(RnApi.number(_centerId).toInt()),
       autoRun: false);
-  late final _students = useApi<List<Row_>>(
-      () async => _centerId == null ? const <Row_>[] : await RnApi.studentListByTcId(RnApi.number(_centerId).toInt()),
-      autoRun: false);
+  late final _students = useApi<List<Row_>>(() async {
+    if (_centerId == null) {
+      return const <Row_>[];
+    }
+    List<Row_> direct = const [];
+    try {
+      direct = await RnApi.studentListByTcId(RnApi.number(_centerId).toInt());
+    } catch (_) {
+      // Fall through to the attendance-derived options below. If that request
+      // also fails, its error remains visible through the resource.
+    }
+    if (direct.isNotEmpty) return direct;
+    // Some centres (notably SK Jerantut) return an empty roster even
+    // though their students have attendance rows. Recover picker options
+    // from the report itself so those records remain searchable.
+    final centre = (_centers.data ?? const <Row_>[])
+        .where((c) => '${c['id']}' == '$_centerId')
+        .firstOrNull;
+    final centreName = '${centre?['text'] ?? ''}';
+    if (centreName.isEmpty) {
+      return const <Row_>[];
+    }
+    final report = await RnApi.attendanceReport({
+      'fromDate': toISODate(_from),
+      'toDate': _endOfDay(_to),
+    });
+    return attendanceStudentOptions(report, centreName);
+  }, autoRun: false);
   late final _rows = useApi<List<Row_>>(
       () => RnApi.attendanceReport({
-            'tCenterId': _centerId == null ? null : RnApi.number(_centerId).toInt(),
-            'tTimeId': _timeId == null ? null : RnApi.number(_timeId).toInt(),
-            'sourceKeyId': _studentId == null ? null : RnApi.number(_studentId).toInt(),
+            // Several deployments ignore or misapply the centre/time filters.
+            // Fetch the instructor's date window and apply the selected values
+            // below against the returned row fields.
             'fromDate': toISODate(_from),
-            'toDate': toISODate(_to),
+            'toDate': _endOfDay(_to),
           }),
       autoRun: false);
+
+  String _endOfDay(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}T23:59:59';
 
   @override
   void initState() {
@@ -980,12 +1012,40 @@ class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAtte
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
+    final applied = _applied;
+    final visibleRows = applied == null
+        ? const <Row_>[]
+        : (_rows.data ?? const <Row_>[]).where((row) {
+            return attendanceMatchesCentre(row, applied.centerName) &&
+                attendanceMatchesTrainingTime(row,
+                    selectedId: applied.timeId,
+                    selectedLabel: applied.timeLabel) &&
+                attendanceMatchesStudent(row, applied.student);
+          }).toList();
     return ReportScaffold<Row_>(
       title: 'Attendance Report',
       loading: _rows.loading,
       error: _rows.error,
-      data: _rows.data,
-      onSearch: _rows.reload,
+      data: visibleRows,
+      onSearch: () {
+        final centre = (_centers.data ?? const <Row_>[])
+            .where((o) => '${o['id']}' == '$_centerId')
+            .firstOrNull;
+        final time = (_times.data ?? const <Row_>[])
+            .where((o) => '${o['id']}' == '$_timeId')
+            .firstOrNull;
+        final student = (_students.data ?? const <Row_>[])
+            .where((o) => '${o['id']}' == '$_studentId')
+            .firstOrNull;
+        setState(() => _applied = (
+              centerName: '${centre?['text'] ?? ''}',
+              timeId: _timeId,
+              timeLabel: '${time?['text'] ?? ''}',
+              student:
+                  _studentId == null || '$_studentId'.isEmpty ? null : student,
+            ));
+        _rows.reload();
+      },
       emptyText: 'No attendance records.',
       filters: [
         SelectField(
@@ -999,6 +1059,8 @@ class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAtte
               _centerId = id;
               _timeId = null;
               _studentId = null;
+              _times.data = null;
+              _students.data = null;
             });
             _times.reload();
             _students.reload();
@@ -1008,21 +1070,33 @@ class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAtte
           label: 'Training Time',
           placeholder: 'Select training time',
           value: _timeId,
-          options: _centerId == null ? const [] : _opts(_times.data),
+          options: _centerId == null
+              ? const []
+              : [(id: '', text: 'All training times'), ..._opts(_times.data)],
           loading: _times.loading,
           disabled: _centerId == null,
           onChange: (id, _) => setState(() => _timeId = id),
         ),
         Row(children: [
-          Expanded(child: DateField(label: 'From', value: _from, onChange: (d) => setState(() => _from = d))),
+          Expanded(
+              child: DateField(
+                  label: 'From',
+                  value: _from,
+                  onChange: (d) => setState(() => _from = d))),
           const SizedBox(width: 10),
-          Expanded(child: DateField(label: 'To', value: _to, onChange: (d) => setState(() => _to = d))),
+          Expanded(
+              child: DateField(
+                  label: 'To',
+                  value: _to,
+                  onChange: (d) => setState(() => _to = d))),
         ]),
         SelectField(
           label: 'Student',
           placeholder: 'All students',
           value: _studentId,
-          options: _centerId == null ? const [] : _opts(_students.data),
+          options: _centerId == null
+              ? const []
+              : [(id: '', text: 'All students'), ..._opts(_students.data)],
           loading: _students.loading,
           disabled: _centerId == null,
           onChange: (id, _) => setState(() => _studentId = id),
@@ -1031,24 +1105,35 @@ class _RAttendanceScreenState extends State<RAttendanceScreen> with UseApi<RAtte
       renderItem: (r, _) {
         final present = r['attendanceType'] == 'Present';
         return RkCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _title(context, '${r['name'] ?? ''}', lines: 1),
             KV('IC No', r['icNo']),
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Row(children: [
-                Text('Type', style: TextStyle(fontSize: 12, color: c.textSecondary, fontWeight: FontWeight.w600)),
+                Text('Type',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: c.textSecondary,
+                        fontWeight: FontWeight.w600)),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('${r['attendanceType'] ?? ''}'.isEmpty ? '—' : '${r['attendanceType']}',
+                  child: Text(
+                      '${r['attendanceType'] ?? ''}'.isEmpty
+                          ? '—'
+                          : '${r['attendanceType']}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: present ? c.success : c.danger)),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: present ? c.success : c.danger)),
                 ),
               ]),
             ),
-            KV('Date/Time', _fmtDateTime(r['recordedTime'])),
+            KV('Date/Time', formatAttendanceRecordedTime(r['recordedTime'])),
             KV('Center', r['trainingCenter']),
           ]),
         );
@@ -1064,8 +1149,14 @@ class RReceiptsScreen extends StatefulWidget {
   State<RReceiptsScreen> createState() => _RReceiptsScreenState();
 }
 
-class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceiptsScreen> {
-  static const _modes = <RkOption>[(id: '', text: 'All'), (id: 'Cash', text: 'Cash'), (id: 'Online', text: 'Online'), (id: 'Bank-In', text: 'Bank-In')];
+class _RReceiptsScreenState extends State<RReceiptsScreen>
+    with UseApi<RReceiptsScreen> {
+  static const _modes = <RkOption>[
+    (id: '', text: 'All'),
+    (id: 'cash', text: 'Cash'),
+    (id: 'online', text: 'Online'),
+    (id: 'bank-in', text: 'Bank-In')
+  ];
   DateTime _from = _monthStart();
   DateTime _to = _today();
   String _mode = '';
@@ -1075,10 +1166,12 @@ class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceipts
   late final _centers = useApi(RnApi.trainingCentres);
   late final _report = useApi<List<Row_>>(
       () => RnApi.receipts({
-            'tCenterId': _centerId == null ? null : RnApi.number(_centerId).toInt(),
-            'reportType': _mode.isEmpty ? null : _mode,
+            'tCenterId':
+                _centerId == null ? null : RnApi.number(_centerId).toInt(),
+            'reportType': receiptServerReportType(_mode),
             'fromDate': toISODate(_from),
-            'toDate': toISODate(_to),
+            'toDate':
+                '${_to.year}-${_to.month.toString().padLeft(2, '0')}-${_to.day.toString().padLeft(2, '0')}T23:59:59',
           }),
       autoRun: false);
 
@@ -1094,7 +1187,11 @@ class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceipts
         title: 'Receipt Report',
         loading: _report.loading && _searched,
         error: _report.error,
-        data: _searched ? _report.data : const [],
+        data: _searched
+            ? (_report.data ?? const <Row_>[])
+                .where((row) => receiptMatchesMode(row, _mode))
+                .toList()
+            : const [],
         onSearch: () {
           setState(() => _searched = true);
           _report.reload();
@@ -1102,11 +1199,24 @@ class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceipts
         emptyText: 'No receipts found.',
         filters: [
           Row(children: [
-            Expanded(child: DateField(label: 'From', value: _from, onChange: (d) => setState(() => _from = d))),
+            Expanded(
+                child: DateField(
+                    label: 'From',
+                    value: _from,
+                    onChange: (d) => setState(() => _from = d))),
             const SizedBox(width: 10),
-            Expanded(child: DateField(label: 'To', value: _to, onChange: (d) => setState(() => _to = d))),
+            Expanded(
+                child: DateField(
+                    label: 'To',
+                    value: _to,
+                    onChange: (d) => setState(() => _to = d))),
           ]),
-          SelectField(label: 'Payment Mode', placeholder: 'All', value: _mode, options: _modes, onChange: (id, _) => setState(() => _mode = '$id')),
+          SelectField(
+              label: 'Payment Mode',
+              placeholder: 'All',
+              value: _mode,
+              options: _modes,
+              onChange: (id, _) => setState(() => _mode = '$id')),
           SelectField(
             label: 'Training Center',
             placeholder: 'Select center',
@@ -1117,12 +1227,14 @@ class _RReceiptsScreenState extends State<RReceiptsScreen> with UseApi<RReceipts
           ),
         ],
         renderItem: (r, _) => RkCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _title(context, '${r['name'] ?? ''}', lines: 1, bottom: 2),
             KV('IC No', r['icNo']),
             KV('Receipt No', r['receiptNo']),
             KV('Date', fmtDateGB(r['receiptDate'])),
-            KV('Amount', 'RM ${money2(RnApi.number(r['receiptAmount']))}', strong: true),
+            KV('Amount', 'RM ${money2(RnApi.number(r['receiptAmount']))}',
+                strong: true),
             KV('Method', r['paymentMethod']),
             KV('Center', r['tcName']),
           ]),
