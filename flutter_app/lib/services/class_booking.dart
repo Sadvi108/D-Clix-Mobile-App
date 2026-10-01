@@ -262,6 +262,13 @@ List<Map<String, dynamic>> bookedClassesOn(List<dynamic> bookings, DateTime day,
   return out;
 }
 
+/// The `yyyy-MM-dd` dates holding an approved booking — the days [bookedClassesOn] would fill,
+/// as one set, so a 12-month calendar can mark them without a pass over every booking per day.
+Set<String> approvedBookingDates(List<dynamic> bookings) => {
+      for (final b in bookings.whereType<Map>())
+        if (isApprovedBooking(b) && '${b['trainingDate'] ?? ''}'.length >= 10) '${b['trainingDate']}'.substring(0, 10),
+    };
+
 /// Bookings ordered for display: upcoming soonest-first, then past most-recent-first.
 List<Map<String, dynamic>> sortBookings(List<dynamic> bookings, {DateTime? now}) {
   final ref = now ?? DateTime.now();

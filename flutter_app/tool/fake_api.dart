@@ -192,6 +192,20 @@ final Map<String, dynamic> _routes = {
       'instructorName': 'Sensei Sample',
     },
   ]),
+  // The member's weekly timetable: Schedule's orange dots and session cards.
+  '/Reports/StudentDetails': _env([
+    for (final (day, from, to) in const [('Tuesday', '8:00 PM', '9:30 PM'), ('Saturday', '10:00 AM', '11:30 AM')])
+      {
+        'studentId': 1,
+        'studentName': 'Alex Tan',
+        'dayOfWeek': day,
+        'tTimeFrom': from,
+        'tTimeTo': to,
+        'tCenterName': 'Sample Training Centre',
+        'instructorName': 'Sensei Sample',
+        'currentGrade': 'Green Belt',
+      },
+  ]),
   '/ClassBooking/NextBookings': _env([_booking]),
   '/ClassBooking/GetBookings': _env([
     _booking,

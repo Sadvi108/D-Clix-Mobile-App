@@ -9,6 +9,7 @@ import '../services/rn_api.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
 import '../theme/ion.dart';
+import '../widgets/anim.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 
@@ -24,9 +25,14 @@ const _sessionColors = [
   Color(0xFFDB2777),
 ];
 
+/// The calendar reaches this month plus the next 11.
+const _monthsAhead = 12;
+
 String _dowFullOf(DateTime d) => _dowFull[d.weekday % 7];
 
-/// Port of `frontend/app/(tabs)/schedule.tsx` (Expo v2.11.1).
+/// Port of `frontend/app/(tabs)/schedule.tsx` (Expo v2.11.1), except the RN 10-day strip is now
+/// a month calendar that expands to 12 months: members book further ahead than ten days and
+/// could not see those dates (manual QA 2026-10-01).
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
   @override
@@ -47,13 +53,9 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   });
   // One-off approved bookings, on top of the weekly timetable above.
   late final _bookings = useApi(() => RnApi.getBookings(studentId: UserSession.instance.currentStudentId));
-  int _active = 0;
-
-  // 10 days starting today
-  late final List<DateTime> _days = () {
-    final base = DateTime.now();
-    return List.generate(10, (i) => DateTime(base.year, base.month, base.day + i));
-  }();
+  late DateTime _selected = DateUtils.dateOnly(DateTime.now());
+  int _page = 0; // months after this one, in the single-month view
+  bool _expanded = false;
 
   @override
   void initState() {
@@ -72,9 +74,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     final top = MediaQuery.paddingOf(context).top;
     final tabBarHeight = tabBarClearance(context);
 
-    final selected = _days[_active];
+    final today = DateUtils.dateOnly(DateTime.now());
+    DateTime monthAt(int i) => DateTime(today.year, today.month + i);
+    final selected = _selected;
     final selectedDow = _dowFullOf(selected);
-    final monthLabel = DateFormat('MMM yyyy').format(_days[0]);
 
     // Report routes can return the whole branch for a student token — keep own rows only.
     final rows = session.scopedRows(_details.data).whereType<Map>().toList();
@@ -84,6 +87,22 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     final weekly = rows.where((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase() == selectedDow.toLowerCase()).toList();
     final classes = [...weekly, ...bookedClassesOn(bookings, selected, timetable: weekly)];
     final trainingDows = rows.map((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase()).toSet();
+    final bookedDates = approvedBookingDates(bookings);
+    // The orange dot: a future day with a weekly class or an approved booking.
+    bool hasClass(DateTime d) =>
+        !d.isBefore(today) &&
+        (trainingDows.contains(_dowFullOf(d).toLowerCase()) || bookedDates.contains(isoDate(d)));
+    _MonthGrid grid(int page) => _MonthGrid(
+          month: monthAt(page),
+          today: today,
+          selected: selected,
+          hasClass: hasClass,
+          onPick: (d) => setState(() {
+            _selected = d;
+            _page = page;
+            _expanded = false;
+          }),
+        );
 
     BoxDecoration cardDeco() => BoxDecoration(
           color: c.surface,
@@ -129,7 +148,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     if (!_details.loading && classes.isNotEmpty) {
       body.add(Padding(
         padding: const EdgeInsets.only(top: 8, bottom: 14),
-        child: Text('${classes.length} session${classes.length > 1 ? 's' : ''} · $selectedDow',
+        child: Text(
+            '${classes.length} session${classes.length > 1 ? 's' : ''} · ${DateFormat('EEEE, d MMM').format(selected)}',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.textSecondary)),
       ));
       for (var i = 0; i < classes.length; i++) {
@@ -191,6 +211,135 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       }
     }
 
+    final monthTitle = TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2, color: c.textPrimary);
+    // clearance = tab bar + floating Book button zone
+    final listPadding = EdgeInsets.fromLTRB(Gaps.xl, 4, Gaps.xl, tabBarHeight + 92);
+
+    // A 44pt touch target around a 34pt chip; dimmed, not hidden, at either end of the 12 months.
+    Widget pager(IconData icon, String label, VoidCallback? onPress) => Semantics(
+          button: true,
+          enabled: onPress != null,
+          label: label,
+          excludeSemantics: true,
+          child: Touchable(
+            onPress: onPress,
+            child: SizedBox.square(
+              dimension: 44,
+              child: Center(
+                child: Opacity(
+                  opacity: onPress == null ? 0.35 : 1,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
+                    child: Icon(icon, size: 17, color: c.textPrimary),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    // One month, with the selected day's classes below it.
+    final monthView = ListView(
+      key: const ValueKey('month'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: listPadding,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.xs, Gaps.md, 0),
+          decoration: cardDeco(),
+          child: Column(children: [
+            Row(children: [
+              const SizedBox(width: Gaps.xs),
+              Expanded(
+                child: Text(DateFormat('MMMM y').format(monthAt(_page)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: monthTitle),
+              ),
+              pager(Ion.chevronBack, 'Previous month', _page > 0 ? () => setState(() => _page--) : null),
+              pager(Ion.chevronForward, 'Next month',
+                  _page < _monthsAhead - 1 ? () => setState(() => _page++) : null),
+            ]),
+            grid(_page),
+            Divider(height: 1, thickness: 1, color: c.border),
+            Semantics(
+              button: true,
+              child: Touchable(
+                onPress: () => setState(() => _expanded = true),
+                activeOpacity: 0.6,
+                child: SizedBox(
+                  height: 48,
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text('View all 12 months',
+                        style: TextStyle(color: c.primary, fontSize: 14, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 6),
+                    Icon(Ion.chevronDown, size: 16, color: c.primary),
+                  ]),
+                ),
+              ),
+            ),
+          ]),
+        ),
+        ...body,
+      ],
+    );
+
+    // All 12 months. Picking a day collapses back to its month (see grid()).
+    final yearView = Column(
+      key: const ValueKey('year'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Pinned above the list, so collapsing never needs a scroll back up.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, Gaps.xs),
+          child: Row(children: [
+            Expanded(
+              child: Text('Tap a date to see its classes', style: TextStyle(fontSize: 13, color: c.textSecondary)),
+            ),
+            Semantics(
+              button: true,
+              child: Touchable(
+                onPress: () => setState(() => _expanded = false),
+                activeOpacity: 0.6,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(999)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('Collapse', style: TextStyle(color: c.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 4),
+                      Icon(Ion.chevronUp, size: 15, color: c.primary),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
+        Expanded(
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: listPadding,
+            itemCount: _monthsAhead,
+            itemBuilder: (context, i) => Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.xs),
+              decoration: cardDeco(),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: Gaps.xs, bottom: Gaps.sm),
+                  child: Text(DateFormat('MMMM y').format(monthAt(i)), style: monthTitle),
+                ),
+                grid(i),
+              ]),
+            ),
+          ),
+        ),
+      ],
+    );
+
     return ColoredBox(
       color: c.background,
       child: Stack(children: [
@@ -205,7 +354,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       style: TextStyle(
                           fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: c.textPrimary)),
                   const SizedBox(height: 2),
-                  Text(monthLabel, style: TextStyle(color: c.textSecondary, fontSize: 13)),
+                  Text('Next 12 months', style: TextStyle(color: c.textSecondary, fontSize: 13)),
                 ]),
               ),
               ClipRRect(
@@ -214,69 +363,14 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               ),
             ]),
           ),
-          SizedBox(
-            height: 108,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: Gaps.xl, vertical: 12),
-              clipBehavior: Clip.none,
-              itemCount: _days.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, i) {
-                final d = _days[i];
-                final on = i == _active;
-                final hasTraining =
-                    trainingDows.contains(_dowFullOf(d).toLowerCase()) || bookedClassesOn(bookings, d).isNotEmpty;
-                return Semantics(
-                  selected: on,
-                  button: true,
-                  child: Touchable(
-                    onPress: () => setState(() => _active = i),
-                    activeOpacity: 0.85,
-                    child: Container(
-                      width: 62,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: on ? c.primary : c.surface,
-                        borderRadius: BorderRadius.circular(Radii.lg),
-                        boxShadow: Shadows.soft(c),
-                        border: c.isDark ? Border.all(color: on ? c.primary : c.border) : null,
-                      ),
-                      child: Column(children: [
-                        Text(_dowShort[d.weekday % 7],
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1,
-                                color: on ? const Color(0xD9FFFFFF) : c.textSecondary)),
-                        const SizedBox(height: 4),
-                        Text('${d.day}',
-                            style: TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.w800, color: on ? Colors.white : c.textPrimary)),
-                        if (hasTraining)
-                          Container(
-                            width: 5,
-                            height: 5,
-                            margin: const EdgeInsets.only(top: 6),
-                            decoration:
-                                BoxDecoration(shape: BoxShape.circle, color: on ? Colors.white : c.primary),
-                          ),
-                      ]),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
           Expanded(
             child: RefreshIndicator(
               color: c.primary,
               onRefresh: reloadAll,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                // clearance = tab bar + floating Book button zone
-                padding: EdgeInsets.fromLTRB(Gaps.xl, 0, Gaps.xl, tabBarHeight + 92),
-                children: body,
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : Motion.base,
+                switchInCurve: Motion.enter,
+                child: _expanded ? yearView : monthView,
               ),
             ),
           ),
@@ -306,6 +400,104 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// One month as a Sunday-first grid. Days outside the month stay blank, so no date shows twice
+/// in the 12-month view; past days are muted and can't be picked.
+class _MonthGrid extends StatelessWidget {
+  final DateTime month;
+  final DateTime today;
+  final DateTime selected;
+  final bool Function(DateTime) hasClass;
+  final ValueChanged<DateTime> onPick;
+  const _MonthGrid({
+    required this.month,
+    required this.today,
+    required this.selected,
+    required this.hasClass,
+    required this.onPick,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final lead = month.weekday % 7; // blanks before the 1st
+    final days = DateUtils.getDaysInMonth(month.year, month.month);
+    final cells = List<DateTime?>.generate(((lead + days) / 7).ceil() * 7,
+        (i) => i < lead || i >= lead + days ? null : DateTime(month.year, month.month, i - lead + 1));
+    return Column(children: [
+      Row(children: [
+        for (final d in _dowShort)
+          Expanded(
+            child: Text(d,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: c.textMuted)),
+          ),
+      ]),
+      const SizedBox(height: Gaps.xs),
+      for (var r = 0; r < cells.length; r += 7)
+        Row(children: [
+          for (final d in cells.sublist(r, r + 7))
+            Expanded(child: d == null ? const SizedBox(height: 46) : _day(c, d)),
+        ]),
+    ]);
+  }
+
+  Widget _day(AppColors c, DateTime d) {
+    final past = d.isBefore(today);
+    final on = DateUtils.isSameDay(d, selected);
+    final isToday = DateUtils.isSameDay(d, today);
+    final dot = hasClass(d);
+    return Semantics(
+      button: true,
+      selected: on,
+      enabled: !past,
+      label: '${DateFormat('EEEE, d MMMM y').format(d)}${dot ? ', classes scheduled' : ''}',
+      excludeSemantics: true,
+      child: Touchable(
+        onPress: past ? null : () => onPick(d),
+        activeOpacity: 0.6,
+        child: SizedBox(
+          height: 46,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: on ? c.primary : null,
+                border: isToday && !on ? Border.all(color: c.primary, width: 1.5) : null,
+              ),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text('${d.day}',
+                    style: TextStyle(
+                        fontSize: 15,
+                        height: 1.2,
+                        fontWeight: on || isToday ? FontWeight.w800 : FontWeight.w600,
+                        color: on
+                            ? Colors.white
+                            : past
+                                ? c.textMuted
+                                : isToday
+                                    ? c.primary
+                                    : c.textPrimary)),
+                // The 10-day strip's 5×5 dot; dotless days keep its space so numbers stay level.
+                if (dot)
+                  Container(
+                    width: 5,
+                    height: 5,
+                    margin: const EdgeInsets.only(top: 3),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: on ? Colors.white : c.primary),
+                  )
+                else
+                  const SizedBox(height: 8),
+              ]),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

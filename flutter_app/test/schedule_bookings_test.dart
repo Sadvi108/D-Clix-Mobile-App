@@ -115,17 +115,47 @@ void main() {
     expect(find.text('Weekly Centre'), findsOneWidget);
   });
 
-  testWidgets('a booked date gets the training dot in the day strip', (tester) async {
-    serve(bookings: [
-      _booking(today.add(const Duration(days: 2)), '12:00 To 13:00 - Normal training', 'Centre', 'Approved'),
-    ]);
+  final dots = find.byWidgetPredicate(
+      (w) => w is Container && w.constraints == const BoxConstraints.tightFor(width: 5, height: 5));
+
+  testWidgets('a booked date next month gets the training dot after paging the calendar', (tester) async {
+    // The old 10-day strip could never reach next month. Day 10 is always a future date.
+    final next = DateTime(today.year, today.month + 1, 10);
+    serve(bookings: [_booking(next, '12:00 To 13:00 - Normal training', 'Centre', 'Approved')]);
+    final semantics = tester.ensureSemantics();
 
     await tester.pumpWidget(_wrap(const ScheduleScreen()));
     await _settle(tester);
+    expect(dots, findsNothing, reason: 'nothing booked this month');
 
-    final dots = find.byWidgetPredicate((w) =>
-        w is Container && w.constraints == const BoxConstraints.tightFor(width: 5, height: 5));
+    await tester.tap(find.bySemanticsLabel('Next month'));
+    await _settle(tester);
+
+    expect(find.text(DateFormat('MMMM y').format(next)), findsOneWidget);
     expect(dots, findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('a class booked 11 months ahead is reachable through the 12-month view', (tester) async {
+    final far = DateTime(today.year, today.month + 11, 15);
+    serve(bookings: [_booking(far, '09:00 To 10:00 - Normal training', 'Far Centre', 'Approved')]);
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(_wrap(const ScheduleScreen()));
+    await _settle(tester);
+    await tester.tap(find.text('View all 12 months'));
+    await _settle(tester);
+
+    final day = find.bySemanticsLabel(RegExp('^${DateFormat('EEEE, d MMMM y').format(far)}, classes'));
+    await tester.scrollUntilVisible(day, 300, scrollable: find.byType(Scrollable).first);
+    await tester.pump(); // lay out the final ensureVisible jump before tapping
+    await tester.tap(day);
+    await _settle(tester);
+
+    expect(find.text('View all 12 months'), findsOneWidget, reason: 'picking a date collapses back to one month');
+    expect(find.text(DateFormat('MMMM y').format(far)), findsOneWidget);
+    expect(find.text('Far Centre'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('changing the selected student refetches that student schedule', (tester) async {
