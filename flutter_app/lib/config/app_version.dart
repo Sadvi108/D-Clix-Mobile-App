@@ -6,4 +6,4 @@
 const String kAppVersion = '2.16.0';
 
 /// Android versionCode / iOS build number.
-const int kAppBuild = 28;
+const int kAppBuild = 29;

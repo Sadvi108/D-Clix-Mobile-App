@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Club Management App</string>
+	<string>D-CLIX</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>D-CLIX uses the camera to scan member QR codes for attendance and to take photos of your profile and bank-in payment slips.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>D-CLIX opens your photo library so you can choose a profile photo, a bank-in payment slip or a QR code image.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>D-CLIX reads NFC tags to mark student attendance.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
