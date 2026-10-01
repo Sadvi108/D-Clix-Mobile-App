@@ -58,25 +58,23 @@ class _CartItem {
 /// The "All" chip: every child together, fetched with no studentId as the old app did.
 const _allAccounts = -1;
 
-/// The child an invoice belongs to, when its studentId names one of [family].
-int? _invoiceOwner(Map inv, Set<int> family) {
-  final id = _intOf(inv['studentId']);
-  return family.contains(id) ? id : null;
-}
-
-/// KAN-35: /Outstanding/Fetch answers a guardian with every sibling's invoices whatever studentId
-/// it is sent, so the chip's child is picked out here. A row whose studentId names no listed
-/// account falls back to name/IC, as History does.
-List<Map<String, dynamic>> _invoicesFor(List<Map<String, dynamic>> rows,
-    {required int studentId, required Set<int> family, required StudentIdentity self, StudentIdentity? selected}) {
-  final byName = scopeStudentRows([for (final r in rows) if (_invoiceOwner(r, family) == null) r],
-          self: self, selected: selected)
-      .rows
-      .toSet();
-  return [
-    for (final r in rows)
-      if (_invoiceOwner(r, family) == null ? byName.contains(r) : _invoiceOwner(r, family) == studentId) r,
-  ];
+/// Which listed child an invoice or receipt row belongs to (KAN-35). /Outstanding/Fetch answers a
+/// guardian with every sibling's invoices whatever studentId it is sent, and /Reports/Receipts
+/// with the whole branch, so each chip shows only its child's rows and "All" shows exactly the
+/// rows the chips show between them. Every row on screen therefore has an owner to be paid for.
+///
+/// Its studentId when that is one of [kids]; else a name/IC match; else, for a row naming nobody,
+/// the signed-in member (their own token's rows, as `scopeStudentRows` treats them). Null: the row
+/// names someone outside the family, and is never shown.
+int? _ownerOf(Map row, List<({int id, String name})> kids, {required int selfId, required StudentIdentity self}) {
+  final id = _intOf(row['studentId']);
+  if (kids.any((k) => k.id == id)) return id;
+  final who = StudentIdentity.ofRow(row);
+  if (who.isEmpty || who.sameAs(self)) return selfId;
+  for (final k in kids) {
+    if (who.sameAs(StudentIdentity(name: k.name))) return k.id;
+  }
+  return null;
 }
 
 String _fmtDate(dynamic iso) {
@@ -400,18 +398,14 @@ class _PaymentsScreenState extends State<PaymentsScreen>
     ];
     final seen = <int>{};
     accounts.retainWhere((a) => seen.add(a.id));
-    final family = {for (final a in accounts) a.id};
+    final kids = [...accounts];
     final self = StudentIdentity(name: '${user['name'] ?? ''}', ic: '${user['icNo'] ?? ''}');
+    int? ownerOf(Map row) => _ownerOf(row, kids, selfId: _intOf(user['id']), self: self);
+    bool onChip(int? owner) => owner != null && (_showAll || owner == accountId);
     final chosen = accounts.where((a) => a.id == accountId).firstOrNull;
     final sibling = chosen != null && chosen.id != _intOf(user['id']) ? chosen : null;
     if (accounts.length > 1) accounts.insert(0, (id: _allAccounts, name: 'All'));
-    final visible = _showAll
-        ? invoices
-        : _invoicesFor(invoices,
-            studentId: accountId ?? 0,
-            family: family,
-            self: self,
-            selected: sibling == null ? null : StudentIdentity(name: sibling.name));
+    final visible = [for (final inv in invoices) if (onChip(ownerOf(inv))) inv];
 
     BoxDecoration cardDeco({bool selected = false}) => BoxDecoration(
           color: c.surface,
@@ -508,7 +502,7 @@ class _PaymentsScreenState extends State<PaymentsScreen>
       if (!_dues.loading) {
         for (final inv in visible) {
           // Pay for the child the invoice belongs to, not whichever chip listed it.
-          final owner = _invoiceOwner(inv, family) ?? accountId ?? 0;
+          final owner = ownerOf(inv)!;
           final key = '$owner:${inv['invoiceId']}';
           final selected = _cart.containsKey(key);
           body.add(Container(
@@ -589,20 +583,8 @@ class _PaymentsScreenState extends State<PaymentsScreen>
       // /Reports/Receipts returns the whole branch to a student token. Keep the chip's child only:
       // the signed-in student by name or IC (not displayName, which becomes an app-wide-picked
       // sibling's name), a sibling by positive name match only.
-      // "All": every listed child's receipts, plus the anonymous rows the member's own token gets.
       final all = (_history.data ?? const <Map<String, dynamic>>[]).cast<Map>().toList();
-      final scoped = _showAll
-          ? [
-              for (final r in all)
-                if (StudentIdentity.ofRow(r).isEmpty ||
-                    accounts.any((a) =>
-                        a.id != _allAccounts && StudentIdentity.ofRow(r).sameAs(StudentIdentity(name: a.name))) ||
-                    StudentIdentity.ofRow(r).sameAs(self))
-                  r,
-            ]
-          : scopeStudentRows(all, self: self, selected: sibling == null ? null : StudentIdentity(name: sibling.name))
-              .rows;
-      final rows = scoped.map((m) => Map<String, dynamic>.from(m)).toList();
+      final rows = [for (final r in all) if (onChip(ownerOf(r))) Map<String, dynamic>.from(r)];
       if (_history.loading) body.add(const SkeletonList(rows: 4, lines: 2, padding: EdgeInsets.only(top: 4)));
       if (!_history.loading && _history.error != null && rows.isEmpty) {
         body.add(ErrorState(message: _history.error, onRetry: _history.reload));

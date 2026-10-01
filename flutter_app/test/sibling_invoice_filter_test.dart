@@ -73,6 +73,10 @@ void main() {
             _inv(102, 1, 'ARI LIM', 'Ari November fee'),
             _inv(201, 2, 'BEA LIM', 'Bea October fee'),
             _inv(202, 2, 'BEA LIM', 'Bea November fee'),
+            // No studentId: owned by name, as the History tab already matches.
+            {..._inv(203, 0, 'BEA LIM', 'Bea December fee')}..remove('studentId'),
+            // Not one of this family: never listed, not even under All.
+            _inv(901, 99, 'ZED TAN', 'Zed October fee'),
           ]);
       }
       return _ok([]);
@@ -87,6 +91,10 @@ void main() {
   });
 
   testWidgets('each child chip shows only that child\'s invoices', (tester) async {
+    // Tall enough that the merged list builds every card.
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(_wrap(const PaymentsScreen()));
     await _settle(tester);
 
@@ -98,10 +106,15 @@ void main() {
     await _settle(tester);
     expect(find.text('Bea October fee'), findsOneWidget);
     expect(find.text('Bea November fee'), findsOneWidget);
+    expect(find.text('Bea December fee'), findsOneWidget);
     expect(find.text('Ari October fee'), findsNothing);
   });
 
   testWidgets('All shows every child\'s invoices together, named', (tester) async {
+    // Tall enough that the merged list builds every card.
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(_wrap(const PaymentsScreen()));
     await _settle(tester);
 
@@ -110,13 +123,18 @@ void main() {
 
     // The old app's request: no studentId, the whole family.
     expect(fetchedFor.last, isNull);
-    for (final t in ['Ari October fee', 'Ari November fee', 'Bea October fee', 'Bea November fee']) {
+    for (final t in ['Ari October fee', 'Ari November fee', 'Bea October fee', 'Bea November fee', 'Bea December fee']) {
       expect(find.text(t), findsOneWidget);
     }
-    expect(find.textContaining('BEA LIM'), findsNWidgets(2));
+    expect(find.textContaining('BEA LIM'), findsNWidgets(3));
+    expect(find.text('Zed October fee'), findsNothing);
   });
 
   testWidgets('invoices ticked under All are paid for the child they belong to', (tester) async {
+    // Tall enough that the merged list builds every card.
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(_wrap(const PaymentsScreen()));
     await _settle(tester);
     await tester.tap(find.text('All'));
@@ -125,8 +143,9 @@ void main() {
     await tester.ensureVisible(find.text('Ari October fee'));
     await tester.tap(find.text('Ari October fee'));
     await tester.pump();
-    await tester.ensureVisible(find.text('Bea October fee'));
-    await tester.tap(find.text('Bea October fee'));
+    // The name-matched row must be paid for Bea too, not lumped into an unknown account.
+    await tester.ensureVisible(find.text('Bea December fee'));
+    await tester.tap(find.text('Bea December fee'));
     await tester.pump();
     expect(find.text('2 selected'), findsOneWidget);
 
