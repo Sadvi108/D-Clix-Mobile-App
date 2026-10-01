@@ -1,0 +1,153 @@
+name: Build Flutter IPA
+# macOS minutes cost 10x Linux, so this runs on demand and on release tags only.
+#
+# Signing secrets (from the company Apple Developer account):
+#   IOS_DIST_CERT_P12_BASE64   base64 of the Apple Distribution certificate exported as .p12
+#   IOS_DIST_CERT_PASSWORD     password chosen when exporting the .p12
+#   IOS_PROVISION_PROFILE_BASE64  base64 of the com.dclix.clubapp distribution profile
+# Team ID, profile name and export method (ad-hoc, App Store, enterprise) are read from the
+# profile. Without the secrets the IPA is unsigned and only installable after re-signing.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['flutter-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build-flutter-ipa:
+    runs-on: macos-latest
+    outputs:
+      ipa_name: ${{ steps.package.outputs.ipa_name }}
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Configure release signing
+        id: signing
+        env:
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$IOS_DIST_CERT_P12_BASE64" ] || [ -z "$IOS_PROVISION_PROFILE_BASE64" ]; then
+            echo "::warning::iOS signing secrets are not set; building an unsigned IPA."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          PROFILE="$RUNNER_TEMP/profile.mobileprovision"
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          read_profile() { /usr/libexec/PlistBuddy -c "Print :$1" "$RUNNER_TEMP/profile.plist"; }
+          UUID="$(read_profile UUID)"
+          TEAM_ID="$(read_profile TeamIdentifier:0)"
+          PROFILE_NAME="$(read_profile Name)"
+          if read_profile ProvisionsAllDevices >/dev/null 2>&1; then
+            METHOD=enterprise
+          elif read_profile ProvisionedDevices >/dev/null 2>&1; then
+            METHOD=release-testing
+          else
+            METHOD=app-store-connect
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+
+          # Release.xcconfig only backs the Runner target, so manual signing stays off the Pods.
+          {
+            echo "CODE_SIGN_STYLE=Manual"
+            echo "DEVELOPMENT_TEAM=$TEAM_ID"
+            echo "PROVISIONING_PROFILE_SPECIFIER=$UUID"
+            echo "CODE_SIGN_IDENTITY=Apple Distribution"
+            echo "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution"
+          } >> ios/Flutter/Release.xcconfig
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>$METHOD</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict><key>com.dclix.clubapp</key><string>$PROFILE_NAME</string></dict>
+          </dict>
+          </plist>
+          EOF
+          echo "Signing for team $TEAM_ID with \"$PROFILE_NAME\" ($METHOD)"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - name: Build release IPA
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          if [ "$SIGNED" = "true" ]; then
+            flutter build ipa --release --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          else
+            flutter build ipa --release --no-codesign
+          fi
+      - name: Package IPA and calculate checksum
+        id: package
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          mkdir -p build/release
+          if [ "$SIGNED" = "true" ]; then
+            NAME=dclix-release.ipa
+            cp build/ios/ipa/*.ipa "build/release/$NAME"
+          else
+            NAME=dclix-release-unsigned.ipa
+            mkdir -p "$RUNNER_TEMP/ipa/Payload"
+            cp -R build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app "$RUNNER_TEMP/ipa/Payload/"
+            (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/flutter_app/build/release/$NAME" Payload)
+          fi
+          cd build/release
+          shasum -a 256 "$NAME" > "$NAME.sha256"
+          echo "ipa_name=$NAME" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dclix-flutter-ipa
+          path: flutter_app/build/release/
+          if-no-files-found: error
+
+  release:
+    # The APK workflow creates the GitHub release for the tag; this attaches the IPA to it.
+    if: startsWith(github.ref, 'refs/tags/flutter-v')
+    needs: build-flutter-ipa
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dclix-flutter-ipa
+          path: release-ipa
+      - name: Attach IPA to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for _ in $(seq 1 60); do
+            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
+            sleep 30
+          done
+          gh release upload "$GITHUB_REF_NAME" release-ipa/* --clobber
