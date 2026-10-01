@@ -1,25 +1,36 @@
 name: Build Flutter IPA
 # macOS minutes cost 10x Linux, so this runs on demand and on release tags only.
 #
-# Signing secrets (from the company Apple Developer account):
-#   IOS_DIST_CERT_P12_BASE64   base64 of the Apple Distribution certificate exported as .p12
-#   IOS_DIST_CERT_PASSWORD     password chosen when exporting the .p12
-#   IOS_PROVISION_PROFILE_BASE64  base64 of the com.dclix.clubapp distribution profile
-# Team ID, profile name and export method (ad-hoc, App Store, enterprise) are read from the
-# profile. Without the secrets the IPA is unsigned and only installable after re-signing.
+# Signs with an App Store Connect API key (Admin role), which lets Xcode create the
+# distribution certificate and profile itself (cloud signing). Secrets:
+#   APPSTORE_KEY_ID              the key's 10-character ID
+#   APPSTORE_ISSUER_ID           the issuer ID above the keys table
+#   APPSTORE_API_KEY_P8_BASE64   base64 of AuthKey_<id>.p8
+# Without them the IPA is unsigned and only installable after re-signing.
 on:
   workflow_dispatch:
+    inputs:
+      method:
+        description: app-store-connect (TestFlight/App Store) or release-testing (Ad Hoc, registered devices)
+        type: choice
+        options: [app-store-connect, release-testing]
+        default: app-store-connect
+      testflight:
+        description: Upload to TestFlight (app-store-connect only; needs the app record in App Store Connect)
+        type: boolean
+        default: false
   push:
     tags: ['flutter-v*']
 
 permissions:
   contents: read
 
+env:
+  APPLE_TEAM_ID: 4Z59DEGJEZ
+
 jobs:
   build-flutter-ipa:
     runs-on: macos-latest
-    outputs:
-      ipa_name: ${{ steps.package.outputs.ipa_name }}
     defaults:
       run:
         working-directory: flutter_app
@@ -32,97 +43,64 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
-      - name: Configure release signing
-        id: signing
+      - name: Build release IPA
         env:
-          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
-          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY_P8_BASE64: ${{ secrets.APPSTORE_API_KEY_P8_BASE64 }}
+          METHOD: ${{ inputs.method || 'app-store-connect' }}
+          TESTFLIGHT: ${{ inputs.testflight || false }}
         run: |
-          if [ -z "$IOS_DIST_CERT_P12_BASE64" ] || [ -z "$IOS_PROVISION_PROFILE_BASE64" ]; then
-            echo "::warning::iOS signing secrets are not set; building an unsigned IPA."
-            echo "signed=false" >> "$GITHUB_OUTPUT"
+          mkdir -p build/release
+          if [ -z "$APPSTORE_API_KEY_P8_BASE64" ]; then
+            echo "::warning::App Store Connect API key secrets are not set; building an unsigned IPA."
+            flutter build ipa --release --no-codesign
+            mkdir -p "$RUNNER_TEMP/ipa/Payload"
+            cp -R build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app "$RUNNER_TEMP/ipa/Payload/"
+            (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/flutter_app/build/release/dclix-release-unsigned.ipa" Payload)
             exit 0
           fi
 
-          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(uuidgen)"
-          echo "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/dist.p12" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security list-keychain -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          KEY="$RUNNER_TEMP/AuthKey_$APPSTORE_KEY_ID.p8"
+          echo "$APPSTORE_API_KEY_P8_BASE64" | base64 --decode > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY"
+            -authenticationKeyID "$APPSTORE_KEY_ID" -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID")
 
-          PROFILE="$RUNNER_TEMP/profile.mobileprovision"
-          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE"
-          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
-          read_profile() { /usr/libexec/PlistBuddy -c "Print :$1" "$RUNNER_TEMP/profile.plist"; }
-          UUID="$(read_profile UUID)"
-          TEAM_ID="$(read_profile TeamIdentifier:0)"
-          PROFILE_NAME="$(read_profile Name)"
-          if read_profile ProvisionsAllDevices >/dev/null 2>&1; then
-            METHOD=enterprise
-          elif read_profile ProvisionedDevices >/dev/null 2>&1; then
-            METHOD=release-testing
-          else
-            METHOD=app-store-connect
-          fi
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          # Release.xcconfig only backs the Runner target, so the team stays off the Pods.
+          printf 'DEVELOPMENT_TEAM=%s\nCODE_SIGN_STYLE=Automatic\n' "$APPLE_TEAM_ID" >> ios/Flutter/Release.xcconfig
+          # flutter build ipa cannot pass the API key to xcodebuild, so archive directly.
+          flutter build ios --release --config-only
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            "${AUTH[@]}" archive
 
-          # Release.xcconfig only backs the Runner target, so manual signing stays off the Pods.
-          {
-            echo "CODE_SIGN_STYLE=Manual"
-            echo "DEVELOPMENT_TEAM=$TEAM_ID"
-            echo "PROVISIONING_PROFILE_SPECIFIER=$UUID"
-            echo "CODE_SIGN_IDENTITY=Apple Distribution"
-            echo "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution"
-          } >> ios/Flutter/Release.xcconfig
-
+          DESTINATION=export
+          if [ "$TESTFLIGHT" = "true" ] && [ "$METHOD" = "app-store-connect" ]; then DESTINATION=upload; fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key><string>$METHOD</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>provisioningProfiles</key>
-            <dict><key>com.dclix.clubapp</key><string>$PROFILE_NAME</string></dict>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>$DESTINATION</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
           </dict>
           </plist>
           EOF
-          echo "Signing for team $TEAM_ID with \"$PROFILE_NAME\" ($METHOD)"
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-      - name: Build release IPA
-        env:
-          SIGNED: ${{ steps.signing.outputs.signed }}
-        run: |
-          if [ "$SIGNED" = "true" ]; then
-            flutter build ipa --release --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
+          if [ "$DESTINATION" = "upload" ]; then
+            echo "Uploaded to App Store Connect; it appears in TestFlight after Apple processes it."
+            ditto -c -k --keepParent "$RUNNER_TEMP/Runner.xcarchive" build/release/Runner.xcarchive.zip
           else
-            flutter build ipa --release --no-codesign
+            cp "$RUNNER_TEMP"/export/*.ipa "build/release/dclix-release-$METHOD.ipa"
           fi
-      - name: Package IPA and calculate checksum
-        id: package
-        env:
-          SIGNED: ${{ steps.signing.outputs.signed }}
-        run: |
-          mkdir -p build/release
-          if [ "$SIGNED" = "true" ]; then
-            NAME=dclix-release.ipa
-            cp build/ios/ipa/*.ipa "build/release/$NAME"
-          else
-            NAME=dclix-release-unsigned.ipa
-            mkdir -p "$RUNNER_TEMP/ipa/Payload"
-            cp -R build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app "$RUNNER_TEMP/ipa/Payload/"
-            (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/flutter_app/build/release/$NAME" Payload)
-          fi
-          cd build/release
-          shasum -a 256 "$NAME" > "$NAME.sha256"
-          echo "ipa_name=$NAME" >> "$GITHUB_OUTPUT"
+          rm -f "$KEY"
+      - name: Calculate checksum
+        working-directory: flutter_app/build/release
+        run: for f in *; do shasum -a 256 "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
         with:
           name: dclix-flutter-ipa
