@@ -18,6 +18,7 @@ The app is a **client only**. All data comes from the third-party **Club.Api** b
 | Backend | Club.Api (ASP.NET, third-party) — REST + bearer JWT |
 | Auth | Token in the OS secure store (Keychain / Keystore), never in SharedPreferences |
 | Android | `com.dclix.clubapp` |
+| iOS | `com.raigtech.dclix` (built and signed by `build-flutter-ipa.yml`) |
 | Payments | Boost gateway via the backend's `/Bcpg` routes |
 
 ## Getting started
