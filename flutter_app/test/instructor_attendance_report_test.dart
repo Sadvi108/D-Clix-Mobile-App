@@ -89,7 +89,7 @@ void main() {
               'name': 'Aisyah',
               'icNo': 'A42',
               'trainingCenter': 'SK Jerantut',
-              'recordedTime': '2026-10-01T18:20:00',
+              'recordedTime': '2026-09-28T18:20:00',
               'attendanceType': 'Present',
             }
           ]);
@@ -132,13 +132,13 @@ void main() {
             {
               'name': 'Morning Student',
               'trainingCenter': 'SK Jerantut',
-              'recordedTime': '2026-10-01T08:20:00',
+              'recordedTime': '2026-09-28T08:20:00',
               'attendanceType': 'Present',
             },
             {
               'name': 'Evening Student',
               'trainingCenter': 'SK Jerantut',
-              'recordedTime': '2026-10-01T18:20:00',
+              'recordedTime': '2026-09-28T18:20:00',
               'attendanceType': 'Present',
             },
           ]);

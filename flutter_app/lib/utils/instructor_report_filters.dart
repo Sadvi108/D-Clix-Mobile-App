@@ -1,6 +1,8 @@
 // Normalisation and client-side fallbacks for instructor reports whose
 // server-side filters are inconsistent across Club.Api deployments.
 
+import '../services/class_booking.dart';
+
 String _norm(Object? value) =>
     '${value ?? ''}'.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
 
@@ -95,6 +97,15 @@ int? _clockMinutes(String value) {
   return (start: start, end: end);
 }
 
+/// Members scan in before a class starts and sometimes after it ends; minutes either side.
+const _checkInGrace = 15;
+
+/// 0 = Sunday … 6 = Saturday from a label like `18:00 To 19:30 (Monday)`, or -1 if none.
+int _labelWeekday(String label) {
+  final m = RegExp(r'\b(sun|mon|tues|wednes|thurs|fri|satur)day\b', caseSensitive: false).firstMatch(label);
+  return m == null ? -1 : weekdayIndexOf(m.group(0));
+}
+
 /// Match an attendance row to a selected training time. Prefer an explicit
 /// time id/name when a newer API includes one; older rows expose only
 /// `recordedTime`, so fall back to the selected class's clock interval.
@@ -128,19 +139,26 @@ bool attendanceMatchesTrainingTime(
     }
   }
 
-  final recorded = DateTime.tryParse('${row['recordedTime'] ?? ''}');
+  final parsed = DateTime.tryParse('${row['recordedTime'] ?? ''}');
   final window = _timeWindow(selectedLabel);
-  if (recorded == null || window == null) return false;
+  if (parsed == null || window == null) return false;
   // Midnight is "date only" in this API, not evidence of a midnight class.
-  if (recorded.hour == 0 && recorded.minute == 0 && recorded.second == 0) {
+  if (parsed.hour == 0 && parsed.minute == 0 && parsed.second == 0) {
     return false;
   }
+  // A zoned value (`Z`/offset) is read in the phone's time; a naive one is taken as already local.
+  // ponytail: whether the backend's naive times are UTC is unconfirmed; if they are, convert here.
+  final recorded = parsed.toLocal();
+  final day = _labelWeekday(selectedLabel);
+  if (day >= 0 && recorded.weekday % 7 != day) return false;
   final minute = recorded.hour * 60 + recorded.minute;
-  if (window.start <= window.end) {
-    return minute >= window.start && minute <= window.end;
+  final start = (window.start - _checkInGrace) % 1440;
+  final end = (window.end + _checkInGrace) % 1440;
+  if (start <= end) {
+    return minute >= start && minute <= end;
   }
   // A session such as 23:30–00:30 crosses midnight.
-  return minute >= window.start || minute <= window.end;
+  return minute >= start || minute <= end;
 }
 
 bool attendanceMatchesCentre(Map row, String centreName) {

@@ -42,15 +42,29 @@ void main() {
           isFalse);
     });
 
+    // 2026-08-31 is a Monday, the evening class's day.
+    bool legacy(String recordedTime) => attendanceMatchesTrainingTime({'recordedTime': recordedTime},
+        selectedId: 77, selectedLabel: evening);
+
     test('falls back to the recorded clock time for legacy rows', () {
-      expect(
-          attendanceMatchesTrainingTime({'recordedTime': '2026-09-01T18:30:00'},
-              selectedId: 77, selectedLabel: evening),
-          isTrue);
-      expect(
-          attendanceMatchesTrainingTime({'recordedTime': '2026-09-01T08:30:00'},
-              selectedId: 77, selectedLabel: evening),
-          isFalse);
+      expect(legacy('2026-08-31T18:30:00'), isTrue);
+      expect(legacy('2026-08-31T08:30:00'), isFalse);
+    });
+
+    test('counts a check-in up to 15 minutes either side of the class', () {
+      expect(legacy('2026-08-31T17:50:00'), isTrue); // scanned in before the start
+      expect(legacy('2026-08-31T19:40:00'), isTrue);
+      expect(legacy('2026-08-31T17:40:00'), isFalse);
+      expect(legacy('2026-08-31T19:50:00'), isFalse);
+    });
+
+    test('a Monday class does not take the same clock time on another day', () {
+      expect(legacy('2026-09-01T18:30:00'), isFalse); // Tuesday
+    });
+
+    test('a timestamp with a zone is compared in local time', () {
+      final local = DateTime(2026, 8, 31, 18, 30);
+      expect(legacy(local.toUtc().toIso8601String()), isTrue);
     });
 
     test('does not treat a date-only midnight value as a midnight class', () {
