@@ -55,6 +55,30 @@ class _CartItem {
   const _CartItem(this.key, this.studentId, this.invoice);
 }
 
+/// The "All" chip: every child together, fetched with no studentId as the old app did.
+const _allAccounts = -1;
+
+/// The child an invoice belongs to, when its studentId names one of [family].
+int? _invoiceOwner(Map inv, Set<int> family) {
+  final id = _intOf(inv['studentId']);
+  return family.contains(id) ? id : null;
+}
+
+/// KAN-35: /Outstanding/Fetch answers a guardian with every sibling's invoices whatever studentId
+/// it is sent, so the chip's child is picked out here. A row whose studentId names no listed
+/// account falls back to name/IC, as History does.
+List<Map<String, dynamic>> _invoicesFor(List<Map<String, dynamic>> rows,
+    {required int studentId, required Set<int> family, required StudentIdentity self, StudentIdentity? selected}) {
+  final byName = scopeStudentRows([for (final r in rows) if (_invoiceOwner(r, family) == null) r],
+          self: self, selected: selected)
+      .rows
+      .toSet();
+  return [
+    for (final r in rows)
+      if (_invoiceOwner(r, family) == null ? byName.contains(r) : _invoiceOwner(r, family) == studentId) r,
+  ];
+}
+
 String _fmtDate(dynamic iso) {
   final s = '${iso ?? ''}';
   if (s.isEmpty) return '';
@@ -87,8 +111,10 @@ class _PaymentsScreenState extends State<PaymentsScreen>
   late final _history = useApi(() => RnApi.receipts({'fromDate': _range.fromDate, 'toDate': _range.toDate}));
 
   Map<String, dynamic> get _user => UserSession.instance.authData ?? const <String, dynamic>{};
-  int? get _accountId =>
-      _activeAccount?.id ?? _appWideAccountId ?? (_user['id'] == null ? null : _intOf(_user['id']));
+  bool get _showAll => _activeAccount?.id == _allAccounts;
+  int? get _accountId => _showAll
+      ? null
+      : _activeAccount?.id ?? _appWideAccountId ?? (_user['id'] == null ? null : _intOf(_user['id']));
 
   /// The child picked app-wide (Home or Profile switcher), so Payments opens on the same one.
   /// The switcher and these chips both carry /Listing/MySiblings ids.
@@ -374,6 +400,18 @@ class _PaymentsScreenState extends State<PaymentsScreen>
     ];
     final seen = <int>{};
     accounts.retainWhere((a) => seen.add(a.id));
+    final family = {for (final a in accounts) a.id};
+    final self = StudentIdentity(name: '${user['name'] ?? ''}', ic: '${user['icNo'] ?? ''}');
+    final chosen = accounts.where((a) => a.id == accountId).firstOrNull;
+    final sibling = chosen != null && chosen.id != _intOf(user['id']) ? chosen : null;
+    if (accounts.length > 1) accounts.insert(0, (id: _allAccounts, name: 'All'));
+    final visible = _showAll
+        ? invoices
+        : _invoicesFor(invoices,
+            studentId: accountId ?? 0,
+            family: family,
+            self: self,
+            selected: sibling == null ? null : StudentIdentity(name: sibling.name));
 
     BoxDecoration cardDeco({bool selected = false}) => BoxDecoration(
           color: c.surface,
@@ -401,7 +439,7 @@ class _PaymentsScreenState extends State<PaymentsScreen>
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (context, i) {
             final a = accounts[i];
-            final on = accountId == a.id;
+            final on = _showAll ? a.id == _allAccounts : accountId == a.id;
             return Touchable(
               onPress: () => _setAccount(a),
               child: Container(
@@ -462,14 +500,16 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         ),
       ));
       if (_dues.loading) body.add(const SkeletonList(rows: 4, lines: 2, padding: EdgeInsets.only(top: 4)));
-      if (!_dues.loading && _dues.error != null && invoices.isEmpty) {
+      if (!_dues.loading && _dues.error != null && visible.isEmpty) {
         body.add(ErrorState(message: _dues.error, onRetry: _dues.reload));
-      } else if (!_dues.loading && invoices.isEmpty) {
+      } else if (!_dues.loading && visible.isEmpty) {
         body.add(emptyTxt('No outstanding invoices.'));
       }
       if (!_dues.loading) {
-        for (final inv in invoices) {
-          final key = '$accountId:${inv['invoiceId']}';
+        for (final inv in visible) {
+          // Pay for the child the invoice belongs to, not whichever chip listed it.
+          final owner = _invoiceOwner(inv, family) ?? accountId ?? 0;
+          final key = '$owner:${inv['invoiceId']}';
           final selected = _cart.containsKey(key);
           body.add(Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -481,7 +521,7 @@ class _PaymentsScreenState extends State<PaymentsScreen>
                 if (selected) {
                   _cart.remove(key);
                 } else {
-                  _cart[key] = _CartItem(key, accountId ?? 0, inv);
+                  _cart[key] = _CartItem(key, owner, inv);
                 }
               }),
               child: Padding(
@@ -511,6 +551,14 @@ class _PaymentsScreenState extends State<PaymentsScreen>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 14, color: c.textPrimary, fontWeight: FontWeight.w700)),
+                      // "All" mixes siblings, so name whose invoice this is, as the old app's "Name :" did.
+                      if (_showAll && '${inv['studentName'] ?? ''}'.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text('${inv['studentName']}'.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: c.textPrimary, fontWeight: FontWeight.w600)),
+                      ],
                       const SizedBox(height: 2),
                       Text('${inv['period'] ?? ''} · ${_fmtDate(inv['invoiceDate'])} · ${inv['paymentStatus'] ?? ''}',
                           style: TextStyle(fontSize: 11, color: c.textSecondary)),
@@ -541,15 +589,20 @@ class _PaymentsScreenState extends State<PaymentsScreen>
       // /Reports/Receipts returns the whole branch to a student token. Keep the chip's child only:
       // the signed-in student by name or IC (not displayName, which becomes an app-wide-picked
       // sibling's name), a sibling by positive name match only.
-      final chosen = accounts.where((a) => a.id == accountId).firstOrNull;
-      final sibling = chosen != null && chosen.id != _intOf(user['id']) ? chosen : null;
+      // "All": every listed child's receipts, plus the anonymous rows the member's own token gets.
       final all = (_history.data ?? const <Map<String, dynamic>>[]).cast<Map>().toList();
-      final rows = scopeStudentRows(all,
-              self: StudentIdentity(name: '${user['name'] ?? ''}', ic: '${user['icNo'] ?? ''}'),
-              selected: sibling == null ? null : StudentIdentity(name: sibling.name))
-          .rows
-          .map((m) => Map<String, dynamic>.from(m))
-          .toList();
+      final scoped = _showAll
+          ? [
+              for (final r in all)
+                if (StudentIdentity.ofRow(r).isEmpty ||
+                    accounts.any((a) =>
+                        a.id != _allAccounts && StudentIdentity.ofRow(r).sameAs(StudentIdentity(name: a.name))) ||
+                    StudentIdentity.ofRow(r).sameAs(self))
+                  r,
+            ]
+          : scopeStudentRows(all, self: self, selected: sibling == null ? null : StudentIdentity(name: sibling.name))
+              .rows;
+      final rows = scoped.map((m) => Map<String, dynamic>.from(m)).toList();
       if (_history.loading) body.add(const SkeletonList(rows: 4, lines: 2, padding: EdgeInsets.only(top: 4)));
       if (!_history.loading && _history.error != null && rows.isEmpty) {
         body.add(ErrorState(message: _history.error, onRetry: _history.reload));
