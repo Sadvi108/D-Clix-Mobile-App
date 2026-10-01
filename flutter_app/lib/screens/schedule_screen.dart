@@ -77,15 +77,13 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     final today = DateUtils.dateOnly(DateTime.now());
     DateTime monthAt(int i) => DateTime(today.year, today.month + i);
     final selected = _selected;
-    final selectedDow = _dowFullOf(selected);
-
     // Report routes can return the whole branch for a student token — keep own rows only.
-    final rows = session.scopedRows(_details.data).whereType<Map>().toList();
+    final rows = session.scopedRows(_details.data).whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row)).toList();
     // Not scopedRows: GetBookings is already the member's own, and a booking's `name` is its
     // slot label — scopeToSelf would read several labels as several people and hide them all.
     final bookings = _bookings.data ?? const <Map<String, dynamic>>[];
-    final weekly = rows.where((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase() == selectedDow.toLowerCase()).toList();
-    final classes = [...weekly, ...bookedClassesOn(bookings, selected, timetable: weekly)];
+    final classes = scheduledClassesOn(rows, bookings, selected);
     final trainingDows = rows.map((r) => '${r['dayOfWeek'] ?? ''}'.toLowerCase()).toSet();
     final bookedDates = approvedBookingDates(bookings);
     // The orange dot: a future day with a weekly class or an approved booking.

@@ -88,6 +88,8 @@ void main() {
     expect(find.text('Check In'), findsOneWidget);
     expect(find.text('MEMBER DETAILS'), findsOneWidget);
     expect(find.text('Switch student'), findsOneWidget);
+    expect(find.text('Notification Settings'), findsOneWidget);
+    expect(find.text('Notifications'), findsNothing);
     expect(find.text('Club overview'.toUpperCase()), findsNothing);
     expect(find.text('Log out'), findsOneWidget);
 

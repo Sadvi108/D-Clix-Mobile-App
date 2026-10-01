@@ -184,4 +184,62 @@ void main() {
       expect(minutesOf(null), isNull);
     });
   });
+
+  group('today\'s classes', () {
+    test('Thursday excludes Wednesday and includes its approved booking in time order', () {
+      final thursday = DateTime(2026, 10, 1);
+      final classes = scheduledClassesOn([
+        {
+          'dayOfWeek': 'Wednesday',
+          'tTimeFrom': '10:00',
+          'tTimeTo': '11:00',
+          'tCenterName': 'Masjid Tengku Kelana Jaya',
+        },
+        {
+          'dayOfWeek': 'Thursday',
+          'tTimeFrom': '15:00',
+          'tTimeTo': '16:00',
+          'tCenterName': 'Kelab Golf Negara Subang',
+        },
+      ], [
+        {
+          'status': 'Confirmed',
+          'trainingDate': '2026-10-01T17:00:00',
+          'title': '17:00 To 18:00 (Thursday) - Booking class 1',
+          'centerName': 'Booking class 1',
+        },
+      ], thursday);
+
+      expect(classes.map((row) => row['tCenterName']).toList(),
+          ['Kelab Golf Negara Subang', 'Booking class 1']);
+      expect(classes.map((row) => row['tTimeFrom']).toList(), ['15:00', '17:00']);
+    });
+
+    test('Home features the next Thursday class instead of a stale weekday', () {
+      final classes = scheduledClassesOn([
+        {
+          'dayOfWeek': 'Wednesday',
+          'tTimeFrom': '10:00',
+          'tTimeTo': '11:00',
+          'tCenterName': 'Masjid Tengku Kelana Jaya',
+        },
+        {
+          'dayOfWeek': 'Thursday',
+          'tTimeFrom': '15:00',
+          'tTimeTo': '16:00',
+          'tCenterName': 'Kelab Golf Negara Subang',
+        },
+        {
+          'dayOfWeek': 'Thursday',
+          'tTimeFrom': '17:00',
+          'tTimeTo': '18:00',
+          'tCenterName': 'Booking class 1',
+        },
+      ], const [], DateTime(2026, 10, 1));
+
+      final featured = featuredClassToday(classes, now: DateTime(2026, 10, 1, 13, 7));
+      expect(featured?['tCenterName'], 'Kelab Golf Negara Subang');
+      expect(featured?['tTimeFrom'], '15:00');
+    });
+  });
 }

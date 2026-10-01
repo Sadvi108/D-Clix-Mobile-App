@@ -808,7 +808,7 @@ class _ProfileScreenState extends State<ProfileScreen> with UseApi<ProfileScreen
       ],
       settingRow(
         icon: Ion.notificationsOutline,
-        title: 'Notifications',
+        title: 'Notification Settings',
         value: 'Alerts, sound and quiet hours',
         tint: const Color(0xFFF59E0B),
         onTap: () => _open('/notification-settings'),

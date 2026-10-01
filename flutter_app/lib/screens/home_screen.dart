@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../services/class_booking.dart';
 import '../services/live_refresh.dart';
 import '../services/rn_api.dart';
 import '../services/user_session.dart';
@@ -39,44 +40,6 @@ const List<QuickTile> kStudentQuickCards = [
 /// (manual QA 2026-09-24, bugs 1 and 2).
 void openRoute(BuildContext context, String route) => context.push(route);
 
-/// Pick the same class row the Schedule tab shows for [day]. When a student
-/// has two classes that day, prefer the row whose venue and time match the
-/// Home summary rather than borrowing another class's trainer.
-Map<String, dynamic>? matchHomeScheduleClass(
-  List<Map<String, dynamic>> rows, {
-  required DateTime day,
-  String trainingText = '',
-  String centerName = '',
-}) {
-  const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  final wantedDay = weekdays[day.weekday - 1].toLowerCase();
-  final candidates = rows.where((row) {
-    final actual = '${row['dayOfWeek'] ?? ''}'.trim().toLowerCase();
-    return actual == wantedDay ||
-        (actual.length >= 3 && wantedDay.startsWith(actual.substring(0, 3))) ||
-        (wantedDay.length >= 3 && actual.startsWith(wantedDay.substring(0, 3)));
-  }).toList();
-  if (candidates.isEmpty) return null;
-
-  String norm(Object? value) => '${value ?? ''}'.replaceAll(RegExp(r'\s+'), '').toLowerCase();
-  final wantedCenter = norm(centerName);
-  final wantedTime = norm(trainingText);
-  final wantedStart = slotStartMinutes(trainingText);
-  int score(Map<String, dynamic> row) {
-    var result = 0;
-    if (wantedCenter.isNotEmpty && norm(row['tCenterName']) == wantedCenter) result += 4;
-    final rowStart = slotStartMinutes(slotLabel(row));
-    if (wantedStart >= 0 && rowStart == wantedStart) result += 3;
-    for (final key in const ['tTimeFrom', 'tTimeTo']) {
-      final value = norm(row[key]);
-      if (value.isNotEmpty && wantedTime.contains(value)) result++;
-    }
-    return result;
-  }
-  candidates.sort((a, b) => score(b).compareTo(score(a)));
-  return candidates.first;
-}
-
 /// Port of `StudentHome` in `frontend/app/(tabs)/home.tsx` (Expo v2.11.1).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -97,6 +60,8 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
       'toDate': _range.toDate,
     });
   });
+  late final _bookings = useApi(
+      () => RnApi.getBookings(studentId: UserSession.instance.currentStudentId));
 
   @override
   void initState() {
@@ -104,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     _stats;
     _info;
     _schedule;
+    _bookings;
   }
 
   @override
@@ -134,10 +100,6 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final beltShort = grade.split(' ').first;
     final num dueAmount = RnApi.number(stats?['dueAmount']);
     final invoiceCount = RnApi.number(stats?['invoiceCount']).toInt();
-    final trainingFirstLine = '${info?['trainingTme'] ?? ''}'
-        .split(RegExp(r'\r?\n'))
-        .where((l) => l.trim().isNotEmpty)
-        .firstOrNull;
     final unread = session.unreadNotifications;
     final status = userField('status');
     final isActive = status.toLowerCase() != 'inactive';
@@ -145,19 +107,24 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
     final activeName = session.activeStudentName?.trim() ?? '';
     final name = activeName.isNotEmpty ? activeName : (userField('name').isEmpty ? 'Member' : userField('name'));
     final clubName = userField('clubName');
-    final tCenterName = '${info?['tCenterName'] ?? ''}';
     final scheduleRows = session.scopedRows(_schedule.data).whereType<Map>()
         .map((row) => Map<String, dynamic>.from(row)).toList();
-    final homeClass = matchHomeScheduleClass(
-      scheduleRows,
-      day: DateTime.now(),
-      trainingText: trainingFirstLine ?? '',
-      centerName: tCenterName,
-    );
+    final now = DateTime.now();
+    final todayClasses = scheduledClassesOn(
+        scheduleRows, _bookings.data ?? const <Map<String, dynamic>>[], now);
+    final homeClass = featuredClassToday(todayClasses, now: now);
+    final classLoading = (_schedule.loading && _schedule.data == null) ||
+        (_bookings.loading && _bookings.data == null);
+    final classTime = homeClass == null
+        ? (classLoading ? 'Loading…' : 'No classes scheduled today')
+        : slotLabel(homeClass);
+    final classCenter = homeClass == null
+        ? 'Rest day'
+        : '${homeClass['tCenterName'] ?? homeClass['centerName'] ?? ''}'.trim();
     // Once the schedule has loaded, a class row is authoritative. Do not put
     // MyInfo's general/default trainer beside a different class.
     final instructorName = homeClass == null
-        ? (_schedule.data == null ? '${info?['instructorName'] ?? ''}' : '')
+        ? ''
         : '${homeClass['instructorName'] ?? homeClass['trainerName'] ?? homeClass['trainer'] ?? ''}'.trim();
     // MyInfo has no student code; the login's `code` is it — unless it only repeats the reg no.
     final loginCode = userField('code');
@@ -585,10 +552,12 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(trainingFirstLine ?? (infoLoading ? 'Loading…' : 'No training time set'),
+                            Text(classTime,
+                                key: const Key('today-class-time'),
                                 style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 2),
-                            Text(tCenterName.isEmpty ? 'Training Center' : tCenterName,
+                            Text(classCenter.isEmpty ? 'Training Center' : classCenter,
+                                key: const Key('today-class-center'),
                                 style: TextStyle(color: c.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
                             const SizedBox(height: 2),
                             Text('with ${instructorName.isEmpty ? 'your instructor' : instructorName}',
@@ -596,20 +565,21 @@ class _HomeScreenState extends State<HomeScreen> with UseApi<HomeScreen>, LiveRe
                           ]),
                         ),
                         const SizedBox(width: 14),
-                        Touchable(
-                          onPress: () => context.push('/qr-scan'),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration:
-                                BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.sm)),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Ion.qrCode, size: 14, color: c.primary),
-                              const SizedBox(width: 4),
-                              Text('Check In',
-                                  style: TextStyle(color: c.primary, fontWeight: FontWeight.w700, fontSize: 11)),
-                            ]),
+                        if (homeClass != null)
+                          Touchable(
+                            onPress: () => context.push('/qr-scan'),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration:
+                                  BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(Radii.sm)),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Ion.qrCode, size: 14, color: c.primary),
+                                const SizedBox(width: 4),
+                                Text('Check In',
+                                    style: TextStyle(color: c.primary, fontWeight: FontWeight.w700, fontSize: 11)),
+                              ]),
+                            ),
                           ),
-                        ),
                       ]),
                     ),
 

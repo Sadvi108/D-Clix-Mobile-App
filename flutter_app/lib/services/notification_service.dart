@@ -42,7 +42,35 @@ class NotificationService {
   static const _lastSeenKey = 'dclix.notif.lastSeen.v1';
 
   /// Tapping a notification should open the conversation list.
-  static void Function(String? payload)? onTap;
+  ///
+  /// A tap that arrives before the app has installed a handler (a cold start from the
+  /// tray, local or FCM) is held and handed over as soon as one is set, so it is not lost.
+  static void Function(String? payload)? _onTap;
+  static String? _heldTap;
+  static bool _hasHeldTap = false;
+
+  static void Function(String? payload)? get onTap => _onTap;
+  static set onTap(void Function(String? payload)? handler) {
+    _onTap = handler;
+    if (handler == null || !_hasHeldTap) return;
+    final payload = _heldTap;
+    clearHeldTap();
+    handler(payload);
+  }
+
+  /// Route a notification tap, holding it when no handler is installed yet.
+  static void deliverTap(String? payload) {
+    final handler = _onTap;
+    if (handler != null) return handler(payload);
+    _heldTap = payload;
+    _hasHeldTap = true;
+  }
+
+  /// Sign-out: a tap held for the previous member must not open after the next sign-in.
+  static void clearHeldTap() {
+    _heldTap = null;
+    _hasHeldTap = false;
+  }
 
   /// True when [init] tried and failed. Notifications will not work, but the app must
   /// still run.
@@ -69,7 +97,7 @@ class NotificationService {
     try {
       await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios),
-        onDidReceiveNotificationResponse: (r) => onTap?.call(r.payload),
+        onDidReceiveNotificationResponse: (r) => deliverTap(r.payload),
       );
       _ready = true;
       // Auto Pay was a monthly reminder until v2.13.3, armed under this id. It is a Boost
@@ -80,7 +108,7 @@ class NotificationService {
       try {
         final launch = await _plugin.getNotificationAppLaunchDetails();
         if (launch?.didNotificationLaunchApp == true) {
-          onTap?.call(launch?.notificationResponse?.payload);
+          deliverTap(launch?.notificationResponse?.payload);
         }
       } catch (_) {/* Launch metadata is optional; delivery can still work. */}
     } catch (e) {
@@ -104,6 +132,8 @@ class NotificationService {
     _ready = false;
     _initFailed = false;
     _created.clear();
+    _delivered.clear();
+    clearHeldTap();
   }
 
   /// Ask for the OS permission. Android 13+ needs POST_NOTIFICATIONS at runtime.
@@ -159,8 +189,21 @@ class NotificationService {
   static String _loudnessFor(NotifPrefs p) =>
       p.sound ? 'alert' : (p.vibrate ? 'vibrate' : 'quiet');
 
+  /// The channel FCM uses for OS-rendered pushes. AndroidManifest names it as
+  /// `default_notification_channel_id`; it must exist before the first background push or
+  /// Android falls back to a generic "Miscellaneous" channel without the club sound.
+  static String get pushChannelId =>
+      _channelId(NotifCategory.general, _loudnessFor(NotifPrefs.defaults));
+
+  static Future<void> ensurePushChannel() async {
+    await init();
+    if (_initFailed) return;
+    await _android(NotifCategory.general, NotifPrefs.defaults);
+  }
+
   static Future<AndroidNotificationDetails> _android(
-      NotifCategory c, NotifPrefs p) async {
+      NotifCategory c, NotifPrefs p,
+      {int? number}) async {
     final loudness = _loudnessFor(p);
     final id = _channelId(c, loudness);
     final suffix = switch (loudness) {
@@ -201,6 +244,7 @@ class NotificationService {
       id,
       '${c.label}$suffix',
       channelShowBadge: true,
+      number: number,
       importance:
           loudness == 'quiet' ? Importance.defaultImportance : Importance.max,
       priority: loudness == 'quiet' ? Priority.defaultPriority : Priority.high,
@@ -225,6 +269,7 @@ class NotificationService {
     int? id,
     bool force = false,
     String payload = 'chat',
+    int? badge,
   }) async {
     await init();
     final p = await NotifPrefsStore.load();
@@ -234,10 +279,11 @@ class NotificationService {
 
     try {
       final details = NotificationDetails(
-        android: await _android(category, p),
+        android: await _android(category, p, number: badge),
         iOS: DarwinNotificationDetails(
           presentSound: p.sound,
           sound: p.sound ? '$_soundName.wav' : null,
+          badgeNumber: badge,
         ),
       );
       await _plugin.show(
@@ -260,6 +306,55 @@ class NotificationService {
         body: 'This is how your alerts will look and sound.',
         force: true,
       );
+
+  // ── Delivered-id ledger ────────────────────────────────────────────────────
+  // FCM and the REST poll can both learn about the same `dclix_id`. Whichever gets there
+  // first claims it; the other stays quiet. Persisted so the WorkManager/FCM background
+  // isolates and the app share it, and bounded so it never grows without limit.
+
+  static const _deliveredKey = 'dclix.notif.delivered.v1';
+  static const _deliveredLimit = 200;
+  static final _delivered = <String>{};
+
+  static Future<SharedPreferences?> _syncDelivered() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      _delivered.addAll(prefs.getStringList(_deliveredKey) ?? const []);
+      return prefs;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _saveDelivered(SharedPreferences? prefs) async {
+    while (_delivered.length > _deliveredLimit) {
+      _delivered.remove(_delivered.first);
+    }
+    try {
+      await prefs?.setStringList(_deliveredKey, _delivered.toList());
+    } catch (_) {}
+  }
+
+  /// Claim [id] for alerting. False when FCM or the poll already alerted it.
+  ///
+  /// The check-and-add runs with no await between them, so two claims racing in one
+  /// isolate cannot both win.
+  static Future<bool> claimDelivery(String id) async {
+    final key = id.trim();
+    if (key.isEmpty) return false;
+    final prefs = await _syncDelivered();
+    if (!_delivered.add(key)) return false;
+    await _saveDelivered(prefs);
+    return true;
+  }
+
+  /// Give a claim back when the alert did not reach the member, so a later poll retries.
+  static Future<void> releaseDelivery(String id) async {
+    final prefs = await _syncDelivered();
+    _delivered.remove(id.trim());
+    await _saveDelivered(prefs);
+  }
 
   // ── Poll → alert ───────────────────────────────────────────────────────────
 
@@ -295,8 +390,14 @@ class NotificationService {
       prefs: prefs,
     );
 
-    var presented = 0;
+    var presented = 0, skipped = 0;
     for (final row in plan.show) {
+      final rowId = '${row['id'] ?? ''}';
+      // FCM already alerted this one: count it as delivered, never show it twice.
+      if (!await claimDelivery(rowId)) {
+        skipped++;
+        continue;
+      }
       final ok = await present(
         title: titleOf(row),
         body: bodyOf(row),
@@ -305,7 +406,11 @@ class NotificationService {
         // A request alert has to land where it can be accepted or rejected.
         payload: isRequestNotification(row) ? 'notifications' : 'chat',
       );
-      if (ok) presented++;
+      if (ok) {
+        presented++;
+      } else {
+        await releaseDelivery(rowId);
+      }
     }
 
     // Summarise only what the volume cap dropped, and only if something got through.
@@ -326,7 +431,7 @@ class NotificationService {
     // Quiet hours hold the mark back so the batch alerts once the window ends.
     if (!plan.deferred &&
         summaryDelivered &&
-        presented == plan.show.length &&
+        presented + skipped == plan.show.length &&
         plan.newLastSeen != null) {
       await _setLastSeen(userId, plan.newLastSeen!);
     }

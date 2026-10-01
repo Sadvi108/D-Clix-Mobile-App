@@ -257,9 +257,63 @@ List<Map<String, dynamic>> bookedClassesOn(List<dynamic> bookings, DateTime day,
       'tTimeTo': times.length > 1 ? times[1] : '',
       'tCenterName': b['centerName'],
       'instructorName': b['instructorName'],
+      'dayOfWeek': _dayNames[day.weekday % 7],
+      'text': b['title'],
     });
   }
   return out;
+}
+
+/// The exact list shown by Schedule for [day]: recurring timetable rows for
+/// that weekday plus approved one-off bookings for that calendar date.
+/// Keeping this in one place prevents Home and Schedule disagreeing about
+/// which classes are actually today.
+List<Map<String, dynamic>> scheduledClassesOn(
+  List<Map<String, dynamic>> timetable,
+  List<dynamic> bookings,
+  DateTime day,
+) {
+  final target = day.weekday % 7; // Sunday = 0, matching [_dayNames].
+  final weekly = timetable
+      .where((row) => weekdayIndexOf('${row['dayOfWeek'] ?? ''}') == target)
+      .map(Map<String, dynamic>.from)
+      .toList();
+  final classes = <Map<String, dynamic>>[
+    ...weekly,
+    ...bookedClassesOn(bookings, day, timetable: weekly),
+  ];
+  classes.sort((a, b) {
+    final aStart = minutesOf('${a['tTimeFrom'] ?? ''}');
+    final bStart = minutesOf('${b['tTimeFrom'] ?? ''}');
+    if (aStart == null && bStart == null) return 0;
+    if (aStart == null) return 1;
+    if (bStart == null) return -1;
+    return aStart.compareTo(bStart);
+  });
+  return classes;
+}
+
+/// The class Home should feature: one currently in progress, otherwise the
+/// next class today, otherwise the day's latest completed class.
+Map<String, dynamic>? featuredClassToday(
+  List<Map<String, dynamic>> classes, {
+  DateTime? now,
+}) {
+  if (classes.isEmpty) return null;
+  final current = now ?? DateTime.now();
+  final minute = current.hour * 60 + current.minute;
+  for (final row in classes) {
+    final start = minutesOf('${row['tTimeFrom'] ?? ''}');
+    final end = minutesOf('${row['tTimeTo'] ?? ''}') ?? start;
+    if (start != null && end != null && minute >= start && minute <= end) {
+      return row;
+    }
+  }
+  for (final row in classes) {
+    final start = minutesOf('${row['tTimeFrom'] ?? ''}');
+    if (start != null && start >= minute) return row;
+  }
+  return classes.last;
 }
 
 /// The `yyyy-MM-dd` dates holding an approved booking — the days [bookedClassesOn] would fill,

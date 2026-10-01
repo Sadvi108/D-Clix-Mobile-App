@@ -61,6 +61,8 @@ dependencies:
   # secret now, so the app never signs anything.
   flutter_inappwebview: ^6.0.0
   nfc_manager: ^4.2.1
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   qr: ^3.0.2 # Generate fictional QR images in the screenshot fixture.
