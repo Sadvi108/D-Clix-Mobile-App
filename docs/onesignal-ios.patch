@@ -1,0 +1,531 @@
+diff --git a/.github/workflows/build-flutter-ipa.yml b/.github/workflows/build-flutter-ipa.yml
+index e1d36a7..c783a3d 100644
+--- a/.github/workflows/build-flutter-ipa.yml
++++ b/.github/workflows/build-flutter-ipa.yml
+@@ -67,7 +67,10 @@ jobs:
+             -authenticationKeyID "$APPSTORE_KEY_ID" -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID")
+ 
+           # Release.xcconfig only backs the Runner target, so the team stays off the Pods.
+-          printf 'DEVELOPMENT_TEAM=%s\nCODE_SIGN_STYLE=Automatic\n' "$APPLE_TEAM_ID" >> ios/Flutter/Release.xcconfig
++          # The OneSignal Notification Service Extension has its own xcconfig and needs it too.
++          for XC in ios/Flutter/Release.xcconfig ios/Flutter/OneSignalNotificationServiceExtension.xcconfig; do
++            printf 'DEVELOPMENT_TEAM=%s\nCODE_SIGN_STYLE=Automatic\n' "$APPLE_TEAM_ID" >> "$XC"
++          done
+           # flutter build ipa cannot pass the API key to xcodebuild, so archive directly.
+           flutter build ios --release --config-only
+           xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+diff --git a/flutter_app/ios/Runner.xcodeproj/project.pbxproj b/flutter_app/ios/Runner.xcodeproj/project.pbxproj
+index 455fe76..c546c93 100644
+--- a/flutter_app/ios/Runner.xcodeproj/project.pbxproj
++++ b/flutter_app/ios/Runner.xcodeproj/project.pbxproj
+@@ -18,6 +18,9 @@
+ 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
+ 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
+ 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
++		0E510000000000000000000F /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E510000000000000000000B /* NotificationService.swift */; };
++		0E5100000000000000000012 /* OneSignalExtension in Frameworks */ = {isa = PBXBuildFile; productRef = 0E5100000000000000000011 /* OneSignalExtension */; };
++		0E5100000000000000000015 /* OneSignalNotificationServiceExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0E5100000000000000000001 /* OneSignalNotificationServiceExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+ /* End PBXBuildFile section */
+ 
+ /* Begin PBXContainerItemProxy section */
+@@ -28,6 +31,13 @@
+ 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
+ 			remoteInfo = Runner;
+ 		};
++		0E5100000000000000000013 /* PBXContainerItemProxy */ = {
++			isa = PBXContainerItemProxy;
++			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
++			proxyType = 1;
++			remoteGlobalIDString = 0E5100000000000000000005;
++			remoteInfo = OneSignalNotificationServiceExtension;
++		};
+ /* End PBXContainerItemProxy section */
+ 
+ /* Begin PBXCopyFilesBuildPhase section */
+@@ -41,6 +51,17 @@
+ 			name = "Embed Frameworks";
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
++		0E5100000000000000000016 /* Embed Foundation Extensions */ = {
++			isa = PBXCopyFilesBuildPhase;
++			buildActionMask = 2147483647;
++			dstPath = "";
++			dstSubfolderSpec = 13;
++			files = (
++				0E5100000000000000000015 /* OneSignalNotificationServiceExtension.appex in Embed Foundation Extensions */,
++			);
++			name = "Embed Foundation Extensions";
++			runOnlyForDeploymentPostprocessing = 0;
++		};
+ /* End PBXCopyFilesBuildPhase section */
+ 
+ /* Begin PBXFileReference section */
+@@ -69,6 +90,11 @@
+ 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+ 		DC339196AE96F75CAD32CE61 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+ 		F392AB192BE8833A3E2B9B41 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
++		0E5100000000000000000001 /* OneSignalNotificationServiceExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OneSignalNotificationServiceExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
++		0E510000000000000000000B /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
++		0E510000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
++		0E510000000000000000000D /* OneSignalNotificationServiceExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OneSignalNotificationServiceExtension.entitlements; sourceTree = "<group>"; };
++		0E510000000000000000000E /* OneSignalNotificationServiceExtension.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = OneSignalNotificationServiceExtension.xcconfig; path = Flutter/OneSignalNotificationServiceExtension.xcconfig; sourceTree = "<group>"; };
+ /* End PBXFileReference section */
+ 
+ /* Begin PBXFrameworksBuildPhase section */
+@@ -89,6 +115,14 @@
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
++		0E5100000000000000000003 /* Frameworks */ = {
++			isa = PBXFrameworksBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++				0E5100000000000000000012 /* OneSignalExtension in Frameworks */,
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
+ /* End PBXFrameworksBuildPhase section */
+ 
+ /* Begin PBXGroup section */
+@@ -122,6 +156,7 @@
+ 				9740EEB21CF90195004384FC /* Debug.xcconfig */,
+ 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
+ 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
++				0E510000000000000000000E /* OneSignalNotificationServiceExtension.xcconfig */,
+ 			);
+ 			name = Flutter;
+ 			sourceTree = "<group>";
+@@ -131,6 +166,7 @@
+ 			children = (
+ 				9740EEB11CF90186004384FC /* Flutter */,
+ 				97C146F01CF9000F007C117D /* Runner */,
++				0E510000000000000000000A /* OneSignalNotificationServiceExtension */,
+ 				97C146EF1CF9000F007C117D /* Products */,
+ 				331C8082294A63A400263BE5 /* RunnerTests */,
+ 				24CB8F7223231BB836E98881 /* Pods */,
+@@ -143,6 +179,7 @@
+ 			children = (
+ 				97C146EE1CF9000F007C117D /* Runner.app */,
+ 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
++				0E5100000000000000000001 /* OneSignalNotificationServiceExtension.appex */,
+ 			);
+ 			name = Products;
+ 			sourceTree = "<group>";
+@@ -172,6 +209,16 @@
+ 			name = Frameworks;
+ 			sourceTree = "<group>";
+ 		};
++		0E510000000000000000000A /* OneSignalNotificationServiceExtension */ = {
++			isa = PBXGroup;
++			children = (
++				0E510000000000000000000B /* NotificationService.swift */,
++				0E510000000000000000000C /* Info.plist */,
++				0E510000000000000000000D /* OneSignalNotificationServiceExtension.entitlements */,
++			);
++			path = OneSignalNotificationServiceExtension;
++			sourceTree = "<group>";
++		};
+ /* End PBXGroup section */
+ 
+ /* Begin PBXNativeTarget section */
+@@ -204,12 +251,14 @@
+ 				97C146EB1CF9000F007C117D /* Frameworks */,
+ 				97C146EC1CF9000F007C117D /* Resources */,
+ 				9705A1C41CF9048500538489 /* Embed Frameworks */,
++				0E5100000000000000000016 /* Embed Foundation Extensions */,
+ 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+ 				8B02727B3E8B106D68EBDEB4 /* [CP] Embed Pods Frameworks */,
+ 			);
+ 			buildRules = (
+ 			);
+ 			dependencies = (
++				0E5100000000000000000014 /* PBXTargetDependency */,
+ 			);
+ 			name = Runner;
+ 			packageProductDependencies = (
+@@ -219,6 +268,26 @@
+ 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
+ 			productType = "com.apple.product-type.application";
+ 		};
++		0E5100000000000000000005 /* OneSignalNotificationServiceExtension */ = {
++			isa = PBXNativeTarget;
++			buildConfigurationList = 0E5100000000000000000006 /* Build configuration list for PBXNativeTarget "OneSignalNotificationServiceExtension" */;
++			buildPhases = (
++				0E5100000000000000000002 /* Sources */,
++				0E5100000000000000000003 /* Frameworks */,
++				0E5100000000000000000004 /* Resources */,
++			);
++			buildRules = (
++			);
++			dependencies = (
++			);
++			name = OneSignalNotificationServiceExtension;
++			packageProductDependencies = (
++				0E5100000000000000000011 /* OneSignalExtension */,
++			);
++			productName = OneSignalNotificationServiceExtension;
++			productReference = 0E5100000000000000000001 /* OneSignalNotificationServiceExtension.appex */;
++			productType = "com.apple.product-type.app-extension";
++		};
+ /* End PBXNativeTarget section */
+ 
+ /* Begin PBXProject section */
+@@ -237,6 +306,9 @@
+ 						CreatedOnToolsVersion = 7.3.1;
+ 						LastSwiftMigration = 1100;
+ 					};
++					0E5100000000000000000005 = {
++						CreatedOnToolsVersion = 16.0;
++					};
+ 				};
+ 			};
+ 			buildConfigurationList = 97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */;
+@@ -250,6 +322,7 @@
+ 			mainGroup = 97C146E51CF9000F007C117D;
+ 			packageReferences = (
+ 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
++				0E5100000000000000000010 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */,
+ 			);
+ 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
+ 			projectDirPath = "";
+@@ -257,6 +330,7 @@
+ 			targets = (
+ 				97C146ED1CF9000F007C117D /* Runner */,
+ 				331C8080294A63A400263BE5 /* RunnerTests */,
++				0E5100000000000000000005 /* OneSignalNotificationServiceExtension */,
+ 			);
+ 		};
+ /* End PBXProject section */
+@@ -280,6 +354,13 @@
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
++		0E5100000000000000000004 /* Resources */ = {
++			isa = PBXResourcesBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
+ /* End PBXResourcesBuildPhase section */
+ 
+ /* Begin PBXShellScriptBuildPhase section */
+@@ -396,6 +477,14 @@
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
++		0E5100000000000000000002 /* Sources */ = {
++			isa = PBXSourcesBuildPhase;
++			buildActionMask = 2147483647;
++			files = (
++				0E510000000000000000000F /* NotificationService.swift in Sources */,
++			);
++			runOnlyForDeploymentPostprocessing = 0;
++		};
+ /* End PBXSourcesBuildPhase section */
+ 
+ /* Begin PBXTargetDependency section */
+@@ -404,6 +493,11 @@
+ 			target = 97C146ED1CF9000F007C117D /* Runner */;
+ 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+ 		};
++		0E5100000000000000000014 /* PBXTargetDependency */ = {
++			isa = PBXTargetDependency;
++			target = 0E5100000000000000000005 /* OneSignalNotificationServiceExtension */;
++			targetProxy = 0E5100000000000000000013 /* PBXContainerItemProxy */;
++		};
+ /* End PBXTargetDependency section */
+ 
+ /* Begin PBXVariantGroup section */
+@@ -486,6 +580,7 @@
+ 				CLANG_ENABLE_MODULES = YES;
+ 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+ 				ENABLE_BITCODE = NO;
++				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
+ 				INFOPLIST_FILE = Runner/Info.plist;
+ 				LD_RUNPATH_SEARCH_PATHS = (
+ 					"$(inherited)",
+@@ -668,6 +763,7 @@
+ 				CLANG_ENABLE_MODULES = YES;
+ 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+ 				ENABLE_BITCODE = NO;
++				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
+ 				INFOPLIST_FILE = Runner/Info.plist;
+ 				LD_RUNPATH_SEARCH_PATHS = (
+ 					"$(inherited)",
+@@ -690,6 +786,7 @@
+ 				CLANG_ENABLE_MODULES = YES;
+ 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+ 				ENABLE_BITCODE = NO;
++				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
+ 				INFOPLIST_FILE = Runner/Info.plist;
+ 				LD_RUNPATH_SEARCH_PATHS = (
+ 					"$(inherited)",
+@@ -703,6 +800,79 @@
+ 			};
+ 			name = Release;
+ 		};
++		0E5100000000000000000007 /* Debug */ = {
++			isa = XCBuildConfiguration;
++			baseConfigurationReference = 0E510000000000000000000E /* OneSignalNotificationServiceExtension.xcconfig */;
++			buildSettings = {
++				CLANG_ENABLE_MODULES = YES;
++				CODE_SIGN_ENTITLEMENTS = OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements;
++				CODE_SIGN_STYLE = Automatic;
++				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
++				INFOPLIST_FILE = OneSignalNotificationServiceExtension/Info.plist;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
++				LD_RUNPATH_SEARCH_PATHS = (
++					"$(inherited)",
++					"@executable_path/Frameworks",
++					"@executable_path/../../Frameworks",
++				);
++				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
++				PRODUCT_BUNDLE_IDENTIFIER = com.raigtech.dclix.OneSignalNotificationServiceExtension;
++				PRODUCT_NAME = "$(TARGET_NAME)";
++				SKIP_INSTALL = YES;
++				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
++				SWIFT_VERSION = 5.0;
++				TARGETED_DEVICE_FAMILY = "1,2";
++			};
++			name = Debug;
++		};
++		0E5100000000000000000008 /* Release */ = {
++			isa = XCBuildConfiguration;
++			baseConfigurationReference = 0E510000000000000000000E /* OneSignalNotificationServiceExtension.xcconfig */;
++			buildSettings = {
++				CLANG_ENABLE_MODULES = YES;
++				CODE_SIGN_ENTITLEMENTS = OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements;
++				CODE_SIGN_STYLE = Automatic;
++				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
++				INFOPLIST_FILE = OneSignalNotificationServiceExtension/Info.plist;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
++				LD_RUNPATH_SEARCH_PATHS = (
++					"$(inherited)",
++					"@executable_path/Frameworks",
++					"@executable_path/../../Frameworks",
++				);
++				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
++				PRODUCT_BUNDLE_IDENTIFIER = com.raigtech.dclix.OneSignalNotificationServiceExtension;
++				PRODUCT_NAME = "$(TARGET_NAME)";
++				SKIP_INSTALL = YES;
++				SWIFT_VERSION = 5.0;
++				TARGETED_DEVICE_FAMILY = "1,2";
++			};
++			name = Release;
++		};
++		0E5100000000000000000009 /* Profile */ = {
++			isa = XCBuildConfiguration;
++			baseConfigurationReference = 0E510000000000000000000E /* OneSignalNotificationServiceExtension.xcconfig */;
++			buildSettings = {
++				CLANG_ENABLE_MODULES = YES;
++				CODE_SIGN_ENTITLEMENTS = OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements;
++				CODE_SIGN_STYLE = Automatic;
++				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
++				INFOPLIST_FILE = OneSignalNotificationServiceExtension/Info.plist;
++				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
++				LD_RUNPATH_SEARCH_PATHS = (
++					"$(inherited)",
++					"@executable_path/Frameworks",
++					"@executable_path/../../Frameworks",
++				);
++				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
++				PRODUCT_BUNDLE_IDENTIFIER = com.raigtech.dclix.OneSignalNotificationServiceExtension;
++				PRODUCT_NAME = "$(TARGET_NAME)";
++				SKIP_INSTALL = YES;
++				SWIFT_VERSION = 5.0;
++				TARGETED_DEVICE_FAMILY = "1,2";
++			};
++			name = Profile;
++		};
+ /* End XCBuildConfiguration section */
+ 
+ /* Begin XCConfigurationList section */
+@@ -736,6 +906,16 @@
+ 			defaultConfigurationIsVisible = 0;
+ 			defaultConfigurationName = Release;
+ 		};
++		0E5100000000000000000006 /* Build configuration list for PBXNativeTarget "OneSignalNotificationServiceExtension" */ = {
++			isa = XCConfigurationList;
++			buildConfigurations = (
++				0E5100000000000000000007 /* Debug */,
++				0E5100000000000000000008 /* Release */,
++				0E5100000000000000000009 /* Profile */,
++			);
++			defaultConfigurationIsVisible = 0;
++			defaultConfigurationName = Release;
++		};
+ /* End XCConfigurationList section */
+ 
+ /* Begin XCLocalSwiftPackageReference section */
+@@ -745,11 +925,27 @@
+ 		};
+ /* End XCLocalSwiftPackageReference section */
+ 
++/* Begin XCRemoteSwiftPackageReference section */
++		0E5100000000000000000010 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */ = {
++			isa = XCRemoteSwiftPackageReference;
++			repositoryURL = "https://github.com/OneSignal/OneSignal-XCFramework";
++			requirement = {
++				kind = exactVersion;
++				version = 5.5.1;
++			};
++		};
++/* End XCRemoteSwiftPackageReference section */
++
+ /* Begin XCSwiftPackageProductDependency section */
+ 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {
+ 			isa = XCSwiftPackageProductDependency;
+ 			productName = FlutterGeneratedPluginSwiftPackage;
+ 		};
++		0E5100000000000000000011 /* OneSignalExtension */ = {
++			isa = XCSwiftPackageProductDependency;
++			package = 0E5100000000000000000010 /* XCRemoteSwiftPackageReference "OneSignal-XCFramework" */;
++			productName = OneSignalExtension;
++		};
+ /* End XCSwiftPackageProductDependency section */
+ 	};
+ 	rootObject = 97C146E61CF9000F007C117D /* Project object */;
+diff --git a/flutter_app/ios/Runner/Info.plist b/flutter_app/ios/Runner/Info.plist
+index 0c84fef..97de866 100644
+--- a/flutter_app/ios/Runner/Info.plist
++++ b/flutter_app/ios/Runner/Info.plist
+@@ -53,6 +53,10 @@
+ 			</array>
+ 		</dict>
+ 	</dict>
++	<key>UIBackgroundModes</key>
++	<array>
++		<string>remote-notification</string>
++	</array>
+ 	<key>UIApplicationSupportsIndirectInputEvents</key>
+ 	<true/>
+ 	<key>UILaunchStoryboardName</key>
+diff --git a/flutter_app/ios/Runner/Runner.entitlements b/flutter_app/ios/Runner/Runner.entitlements
+new file mode 100644
+index 0000000..41b1b29
+--- /dev/null
++++ b/flutter_app/ios/Runner/Runner.entitlements
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++	<!-- Push (OneSignal/APNs). App Store export rewrites this to production. -->
++	<key>aps-environment</key>
++	<string>development</string>
++	<!-- Shared with OneSignalNotificationServiceExtension; must match it byte for byte. -->
++	<key>com.apple.security.application-groups</key>
++	<array>
++		<string>group.com.raigtech.dclix.onesignal</string>
++	</array>
++</dict>
++</plist>
+diff --git a/flutter_app/ios/Flutter/OneSignalNotificationServiceExtension.xcconfig b/flutter_app/ios/Flutter/OneSignalNotificationServiceExtension.xcconfig
+new file mode 100644
+index 0000000..171e3f1
+--- /dev/null
++++ b/flutter_app/ios/Flutter/OneSignalNotificationServiceExtension.xcconfig
+@@ -0,0 +1,4 @@
++// Backs only the OneSignal Notification Service Extension. Generated.xcconfig supplies
++// FLUTTER_BUILD_NAME/NUMBER, so the extension's version always matches the app's (App Store
++// rejects a mismatch). Release CI appends DEVELOPMENT_TEAM here, as it does for Release.xcconfig.
++#include "Generated.xcconfig"
+diff --git a/flutter_app/ios/OneSignalNotificationServiceExtension/NotificationService.swift b/flutter_app/ios/OneSignalNotificationServiceExtension/NotificationService.swift
+new file mode 100644
+index 0000000..fcd43ef
+--- /dev/null
++++ b/flutter_app/ios/OneSignalNotificationServiceExtension/NotificationService.swift
+@@ -0,0 +1,39 @@
++import UserNotifications
++import OneSignalExtension
++
++/// Lets OneSignal finish each push before iOS shows it: badge counts, Confirmed Delivery
++/// and images run here, sharing data with the app through the
++/// `group.com.raigtech.dclix.onesignal` App Group.
++class NotificationService: UNNotificationServiceExtension {
++
++    var contentHandler: ((UNNotificationContent) -> Void)?
++    var receivedRequest: UNNotificationRequest!
++    var bestAttemptContent: UNMutableNotificationContent?
++
++    override func didReceive(
++        _ request: UNNotificationRequest,
++        withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
++    ) {
++        self.receivedRequest = request
++        self.contentHandler = contentHandler
++        self.bestAttemptContent = (request.content.mutableCopy() as? UNMutableNotificationContent)
++
++        if let bestAttemptContent = bestAttemptContent {
++            OneSignalExtension.didReceiveNotificationExtensionRequest(
++                self.receivedRequest,
++                with: bestAttemptContent,
++                withContentHandler: self.contentHandler
++            )
++        }
++    }
++
++    override func serviceExtensionTimeWillExpire() {
++        if let contentHandler = contentHandler, let bestAttemptContent = bestAttemptContent {
++            OneSignalExtension.serviceExtensionTimeWillExpireRequest(
++                self.receivedRequest,
++                with: self.bestAttemptContent
++            )
++            contentHandler(bestAttemptContent)
++        }
++    }
++}
+diff --git a/flutter_app/ios/OneSignalNotificationServiceExtension/Info.plist b/flutter_app/ios/OneSignalNotificationServiceExtension/Info.plist
+new file mode 100644
+index 0000000..060b7c0
+--- /dev/null
++++ b/flutter_app/ios/OneSignalNotificationServiceExtension/Info.plist
+@@ -0,0 +1,31 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++	<key>CFBundleDevelopmentRegion</key>
++	<string>$(DEVELOPMENT_LANGUAGE)</string>
++	<key>CFBundleDisplayName</key>
++	<string>OneSignalNotificationServiceExtension</string>
++	<key>CFBundleExecutable</key>
++	<string>$(EXECUTABLE_NAME)</string>
++	<key>CFBundleIdentifier</key>
++	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
++	<key>CFBundleInfoDictionaryVersion</key>
++	<string>6.0</string>
++	<key>CFBundleName</key>
++	<string>$(PRODUCT_NAME)</string>
++	<key>CFBundlePackageType</key>
++	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
++	<key>CFBundleShortVersionString</key>
++	<string>$(FLUTTER_BUILD_NAME)</string>
++	<key>CFBundleVersion</key>
++	<string>$(FLUTTER_BUILD_NUMBER)</string>
++	<key>NSExtension</key>
++	<dict>
++		<key>NSExtensionPointIdentifier</key>
++		<string>com.apple.usernotifications.service</string>
++		<key>NSExtensionPrincipalClass</key>
++		<string>$(PRODUCT_MODULE_NAME).NotificationService</string>
++	</dict>
++</dict>
++</plist>
+diff --git a/flutter_app/ios/OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements b/flutter_app/ios/OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements
+new file mode 100644
+index 0000000..1f466e4
+--- /dev/null
++++ b/flutter_app/ios/OneSignalNotificationServiceExtension/OneSignalNotificationServiceExtension.entitlements
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++	<key>com.apple.security.application-groups</key>
++	<array>
++		<string>group.com.raigtech.dclix.onesignal</string>
++	</array>
++</dict>
++</plist>

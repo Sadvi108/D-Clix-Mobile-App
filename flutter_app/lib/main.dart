@@ -7,6 +7,8 @@ import 'router/app_router.dart';
 import 'services/extra_trust.dart';
 import 'services/user_session.dart';
 import 'services/notification_service.dart';
+import 'services/push_notification_service.dart';
+import 'services/push_verification.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_provider.dart';
 
@@ -15,6 +17,11 @@ Future<void> main() async {
   // Before any request: older Android phones cannot verify the photo host otherwise.
   await ExtraTrust.install();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // Before the session restores, so a tap that launched the app is held before restore
+  // decides whether it may route. Neither throws, and both are bounded.
+  await NotificationService.init();
+  // OneSignal push alongside polling (see PushNotificationService.serverPushLive).
+  await PushNotificationService.init();
   runApp(
     MultiProvider(
       providers: [
@@ -34,38 +41,44 @@ class DClixApp extends StatefulWidget {
 
 class _DClixAppState extends State<DClixApp> {
   AppLifecycleListener? _lifecycle;
-  String? _pendingNotification;
   bool _navigationQueued = false;
 
   @override
   void initState() {
     super.initState();
-    NotificationService.onTap = (payload) {
-      _pendingNotification = payload ?? 'chat';
-      _sessionChanged();
-    };
+    NotificationService.onTap = _sessionChanged;
+    // onesignal:managed v1 — debug registration logs; no setup-success dialog.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PushVerification.install();
+    });
     UserSession.instance.addListener(_sessionChanged);
     _lifecycle = AppLifecycleListener(onResume: () {
-      if (UserSession.instance.isLoggedIn)
+      if (UserSession.instance.isLoggedIn) {
         UserSession.instance.startNotificationPolling();
+      }
     }, onStateChange: (state) {
-      if (state != AppLifecycleState.resumed)
+      if (state != AppLifecycleState.resumed) {
         UserSession.instance.stopNotificationPolling();
+      }
     });
   }
 
   void _sessionChanged() {
     final session = UserSession.instance;
-    if (_pendingNotification == null ||
+    // The route stays held in NotificationService, where sign-out, a failed restore and
+    // a manual sign-in all clear it, until a signed-in session can take it.
+    if (!NotificationService.hasHeldTap ||
         !session.isLoggedIn ||
         session.loading ||
-        _navigationQueued) return;
+        _navigationQueued) {
+      return;
+    }
     _navigationQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _navigationQueued = false;
       if (!mounted || !session.isLoggedIn || session.loading) return;
-      final payload = _pendingNotification;
-      _pendingNotification = null;
+      final payload = NotificationService.takeHeldTap();
+      if (payload == null) return; // cleared while the frame was pending
       appRouter.push(switch (payload) {
         'autopay' => '/autopay',
         // A request alert must open the list that carries Accept/Reject.

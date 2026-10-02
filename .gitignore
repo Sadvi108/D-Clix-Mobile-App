@@ -177,3 +177,8 @@ outputs/
 # file: if a shared .claude/ config is ever wanted, add a `!` exception for it here
 # rather than dropping this rule, since git will not descend into it otherwise.
 .claude/
+
+# Push setup checkpoints and Firebase server credentials stay local.
+.onesignal/
+*-service-account*.json
+*firebase-adminsdk*.json

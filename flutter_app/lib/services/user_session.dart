@@ -10,6 +10,7 @@ import 'background_poll.dart';
 import 'api_service.dart';
 import 'secure_store.dart';
 import 'notification_service.dart';
+import 'push_notification_service.dart';
 import 'response_utils.dart';
 import 'live_refresh.dart';
 import 'rn_api.dart';
@@ -1168,12 +1169,19 @@ class UserSession extends ChangeNotifier {
   /// be server-side expired — callers should treat a subsequent 401 as a
   /// signal to route back to /login.
   Future<bool> restoreSession() async {
+    var restored = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_kAuthKey);
-      if (raw == null || raw.isEmpty) return false;
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return false;
+      final decoded = raw == null || raw.isEmpty ? null : jsonDecode(raw);
+      if (decoded is! Map) {
+        // No profile blob, but possibly a keystore token that outlived it (iOS keeps the
+        // Keychain across a reinstall). Unusable without the blob, so drop it rather than
+        // let it pass for a signed-in device. Not awaited: a cold start with no session
+        // must not wait on the keystore.
+        unawaited(SecureStore.delete(_kTokenKey));
+        return false;
+      }
       final data = Map<String, dynamic>.from(decoded);
 
       // Normal path: the token lives in the keystore. Migration path: a blob written by a
@@ -1204,21 +1212,39 @@ class UserSession extends ChangeNotifier {
         await _clearPersistedAuth();
         authData = null;
         ApiService.clearToken();
+        unawaited(PushNotificationService.signedOut());
         return false;
       }
       startNotificationPolling();
-      // Closed-app alerts. Registered here rather than at app start so it only runs for a
-      // signed-in member, and so a fresh sign-in re-arms it.
-      unawaited(BackgroundPoll.register());
-      unawaited(NotificationService.requestPermission());
+      unawaited(_armAlerts());
       _checkStoreVersion();
+      restored = true;
       return true;
     } catch (e) {
       debugPrint('restoreSession failed: $e');
       return false;
     } finally {
+      // A tap only routes for the session that was restored. Whoever signs in next may
+      // not be the member that push was meant for.
+      if (!restored) NotificationService.clearHeldTap();
       loading = false;
       notifyListeners();
+    }
+  }
+
+  /// Closed-app alerts and the OneSignal binding, for the member who just signed in or
+  /// was restored. Push raises the alerts once the backend sends through OneSignal and
+  /// this device is opted in; polling does otherwise. Never both.
+  Future<void> _armAlerts() async {
+    await PushNotificationService.signedIn(authData);
+    await PushNotificationService.requestPermission();
+    if (!isLoggedIn) return; // signed out while the prompt was up
+    if (PushNotificationService.alertsViaPush) {
+      await BackgroundPoll.cancel();
+    } else {
+      // Registered here rather than at app start so it only runs for a signed-in
+      // member, and so a fresh sign-in re-arms it.
+      await BackgroundPoll.register();
     }
   }
 
@@ -1240,6 +1266,8 @@ class UserSession extends ChangeNotifier {
     String? clubCode,
     int? branchId,
   }) async {
+    // A manual sign-in may be a different member from whoever a held tap was for.
+    NotificationService.clearHeldTap();
     loading = true;
     error = null;
     notifyListeners();
@@ -1288,10 +1316,7 @@ class UserSession extends ChangeNotifier {
       await _persistAuth();
       await _loadAll();
       startNotificationPolling();
-      // Closed-app alerts. Registered here rather than at app start so it only runs for a
-      // signed-in member, and so a fresh sign-in re-arms it.
-      unawaited(BackgroundPoll.register());
-      unawaited(NotificationService.requestPermission());
+      unawaited(_armAlerts());
       // Boot-time post-login extras (best-effort, never throw).
       _checkStoreVersion();
       return true;
@@ -1557,8 +1582,15 @@ class UserSession extends ChangeNotifier {
           userId != authenticatedUserId) return;
       acceptNotifications(findRecordList(response));
       if (raiseAlerts && isLoggedIn && userId != null) {
-        await NotificationService.alertForNew(
-            userId: userId, rows: notifications ?? const []);
+        // Push already announced these; keep the mark current so a later fallback to
+        // polling does not replay them.
+        if (PushNotificationService.alertsViaPush) {
+          await NotificationService.markSeen(
+              userId: userId, rows: notifications ?? const []);
+        } else {
+          await NotificationService.alertForNew(
+              userId: userId, rows: notifications ?? const []);
+        }
       }
     } catch (e) {
       if (epoch != ApiService.sessionEpoch ||
@@ -1694,6 +1726,7 @@ class UserSession extends ChangeNotifier {
       allBookings = null;
 
       await _persistAuth();
+      unawaited(PushNotificationService.signedIn(authData));
       await _loadAll();
       return true;
     } catch (e) {
@@ -1825,6 +1858,7 @@ class UserSession extends ChangeNotifier {
     // Otherwise a signed-out device keeps waking up to poll with a token that is gone.
     unawaited(BackgroundPoll.cancel());
     unawaited(NotificationService.cancelAll());
+    unawaited(PushNotificationService.signedOut());
     _clearPersistedAuth();
     _clearAccountScoped();
     authData = null;

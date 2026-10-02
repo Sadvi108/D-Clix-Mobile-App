@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../services/api.dart';
 import '../services/notification_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/response_utils.dart';
 import '../services/user_session.dart';
 import '../theme/app_theme.dart';
@@ -45,6 +46,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     // Opening this screen IS reading them, so drop the app-icon badge the alerts set.
     NotificationService.cancelAll();
+    PushNotificationService.clearBadge();
     _refresh();
   }
 

@@ -1,2 +1,7 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// onesignal:managed v1
+CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements
+DEVELOPMENT_TEAM = 4Z59DEGJEZ
+CODE_SIGN_STYLE = Automatic

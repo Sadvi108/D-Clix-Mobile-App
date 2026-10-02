@@ -1,5 +1,6 @@
 import java.io.FileInputStream
 import java.util.Properties
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -16,10 +17,30 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// onesignal:managed v1 — match Flutter's public app ID before a saved SDK can start.
+val dartDefines = providers.gradleProperty("dart-defines").orNull
+    ?.split(",")
+    ?.map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+    ?.associate {
+        val entry = it.split("=", limit = 2)
+        entry[0] to entry.getOrElse(1) { "" }
+    }
+    ?: emptyMap()
+val oneSignalAppId = dartDefines["ONESIGNAL_APP_ID"]
+    ?: "effd15e0-373e-4981-b319-ea22407d2a56"
+require(oneSignalAppId.isEmpty() ||
+    oneSignalAppId.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))) {
+    "ONESIGNAL_APP_ID must be a UUID or empty."
+}
+
 android {
     namespace = "com.dclix.clubapp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     compileOptions {
         // flutter_local_notifications schedules against java.time, which needs the
@@ -36,6 +57,7 @@ android {
 
     defaultConfig {
         applicationId = "com.dclix.clubapp"
+        buildConfigField("String", "ONESIGNAL_APP_ID", "\"$oneSignalAppId\"")
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -70,6 +92,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Match onesignal_flutter 5.5.2's native dependency for early initialization.
+    implementation("com.onesignal:OneSignal:5.8.0") // onesignal:managed v1
 }
 
 flutter {

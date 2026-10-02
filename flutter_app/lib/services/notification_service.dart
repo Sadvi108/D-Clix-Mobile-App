@@ -23,9 +23,10 @@ bool isRequestNotification(Map n) =>
 /// *dedicated* registration route in the Swagger, but the old app registered the device
 /// anyway — it put the FCM token in `DeviceId` on `/Account/Authenticate`
 /// (`LoginPageViewModel.cs:169,178`), so the backend has somewhere to keep one. What is
-/// genuinely unproven is delivery: this app has no Firebase dependency, so it has no token
-/// to send, and nothing here shows the backend actually sends to stored tokens. Treat
-/// server push as UNVERIFIED and needing Firebase + backend work, not as ruled out.
+/// genuinely unproven is delivery. This app now uses OneSignal instead
+/// (`PushNotificationService`), bound to the member by external ID; until the backend sends
+/// through it, polling remains the delivery path. Both share [claimDelivery], so one
+/// notification alerts once. See docs/push-notifications.md.
 ///
 /// Sound, per platform:
 ///   Android 8+  the CHANNEL owns the sound and vibration; content-level settings are
@@ -41,36 +42,35 @@ class NotificationService {
 
   static const _lastSeenKey = 'dclix.notif.lastSeen.v1';
 
-  /// Tapping a notification should open the conversation list.
-  ///
-  /// A tap that arrives before the app has installed a handler (a cold start from the
-  /// tray, local or FCM) is held and handed over as soon as one is set, so it is not lost.
-  static void Function(String? payload)? _onTap;
+  /// A tapped notification's route waits HERE, and only here, until a signed-in member
+  /// takes it ([takeHeldTap]). [clearHeldTap] (sign-out, a failed restore, a manual
+  /// sign-in) therefore reaches every pending route; no copy lives anywhere else.
+  /// [onTap] is only a wake-up call, so the app can check whether it may route now.
+  static void Function()? _onTap;
   static String? _heldTap;
-  static bool _hasHeldTap = false;
 
-  static void Function(String? payload)? get onTap => _onTap;
-  static set onTap(void Function(String? payload)? handler) {
+  static void Function()? get onTap => _onTap;
+  static set onTap(void Function()? handler) {
     _onTap = handler;
-    if (handler == null || !_hasHeldTap) return;
-    final payload = _heldTap;
-    clearHeldTap();
-    handler(payload);
+    if (handler != null && _heldTap != null) handler();
   }
 
-  /// Route a notification tap, holding it when no handler is installed yet.
+  /// Hold the route for a tap (an ordinary club message opens the chat list).
   static void deliverTap(String? payload) {
-    final handler = _onTap;
-    if (handler != null) return handler(payload);
-    _heldTap = payload;
-    _hasHeldTap = true;
+    _heldTap = payload ?? 'chat';
+    _onTap?.call();
   }
 
-  /// Sign-out: a tap held for the previous member must not open after the next sign-in.
-  static void clearHeldTap() {
+  static bool get hasHeldTap => _heldTap != null;
+
+  /// The held route, consumed: it opens once.
+  static String? takeHeldTap() {
+    final route = _heldTap;
     _heldTap = null;
-    _hasHeldTap = false;
+    return route;
   }
+
+  static void clearHeldTap() => _heldTap = null;
 
   /// True when [init] tried and failed. Notifications will not work, but the app must
   /// still run.
@@ -189,9 +189,9 @@ class NotificationService {
   static String _loudnessFor(NotifPrefs p) =>
       p.sound ? 'alert' : (p.vibrate ? 'vibrate' : 'quiet');
 
-  /// The channel FCM uses for OS-rendered pushes. AndroidManifest names it as
-  /// `default_notification_channel_id`; it must exist before the first background push or
-  /// Android falls back to a generic "Miscellaneous" channel without the club sound.
+  /// The channel OS-rendered pushes use: the backend sends
+  /// `existing_android_channel_id: "dclix-general-alert-v1"`. It must exist before the
+  /// first background push, or Android shows it without the club sound.
   static String get pushChannelId =>
       _channelId(NotifCategory.general, _loudnessFor(NotifPrefs.defaults));
 
@@ -216,6 +216,11 @@ class NotificationService {
       try {
         final android = _plugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
+        // The channel names this group, and Android refuses to create a channel whose
+        // group does not exist yet ("NotificationChannelGroup doesn't exist").
+        await android?.createNotificationChannelGroup(
+            const AndroidNotificationChannelGroup(
+                'dclix-notifications', 'D-CLIX notifications'));
         await android?.createNotificationChannel(AndroidNotificationChannel(
           id,
           '${c.label}$suffix',
@@ -308,9 +313,9 @@ class NotificationService {
       );
 
   // ── Delivered-id ledger ────────────────────────────────────────────────────
-  // FCM and the REST poll can both learn about the same `dclix_id`. Whichever gets there
-  // first claims it; the other stays quiet. Persisted so the WorkManager/FCM background
-  // isolates and the app share it, and bounded so it never grows without limit.
+  // Push and the REST poll can both learn about the same `dclix_id`. Whichever gets there
+  // first claims it; the other stays quiet. Persisted so the WorkManager background
+  // isolate and the app share it, and bounded so it never grows without limit.
 
   static const _deliveredKey = 'dclix.notif.delivered.v1';
   static const _deliveredLimit = 200;
@@ -336,7 +341,7 @@ class NotificationService {
     } catch (_) {}
   }
 
-  /// Claim [id] for alerting. False when FCM or the poll already alerted it.
+  /// Claim [id] for alerting. False when push or the poll already alerted it.
   ///
   /// The check-and-add runs with no await between them, so two claims racing in one
   /// isolate cannot both win.
@@ -354,6 +359,17 @@ class NotificationService {
     final prefs = await _syncDelivered();
     _delivered.remove(id.trim());
     await _saveDelivered(prefs);
+  }
+
+  /// Sign-out or an expired session: ids are only meaningful for the member who received
+  /// them, so the next member starts with an empty ledger (their own poll mark still
+  /// guards their backlog).
+  static Future<void> clearDelivered() async {
+    _delivered.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_deliveredKey);
+    } catch (_) {}
   }
 
   // ── Poll → alert ───────────────────────────────────────────────────────────
@@ -393,7 +409,7 @@ class NotificationService {
     var presented = 0, skipped = 0;
     for (final row in plan.show) {
       final rowId = '${row['id'] ?? ''}';
-      // FCM already alerted this one: count it as delivered, never show it twice.
+      // Push already alerted this one: count it as delivered, never show it twice.
       if (!await claimDelivery(rowId)) {
         skipped++;
         continue;
@@ -435,6 +451,21 @@ class NotificationService {
         plan.newLastSeen != null) {
       await _setLastSeen(userId, plan.newLastSeen!);
     }
+  }
+
+  /// Advance the mark without alerting: push is announcing new rows on this device.
+  static Future<void> markSeen({
+    required int userId,
+    required List<dynamic> rows,
+  }) async {
+    final last = await _lastSeen(userId);
+    final ids = rows
+        .whereType<Map>()
+        .map((r) => int.tryParse('${r['id']}'))
+        .whereType<int>();
+    if (ids.isEmpty) return;
+    final maxId = ids.reduce((a, b) => b > a ? b : a);
+    if (last == null || maxId > last) await _setLastSeen(userId, maxId);
   }
 
   static Future<void> clearAll() async {
