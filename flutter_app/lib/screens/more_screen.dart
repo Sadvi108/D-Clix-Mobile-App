@@ -101,9 +101,11 @@ class MoreScreen extends StatelessWidget {
                   final w = box.maxWidth * .305;
                   final gap = (box.maxWidth - w * 3) / 2;
                   return Wrap(spacing: gap, children: [
-                    for (final o in s.items.where(
-                      (o) => o.id != 'book' || session.allowClassBooking,
-                    ))
+                    for (final o in s.items.where((o) => switch (o.id) {
+                          'book' => session.allowClassBooking,
+                          'autopay' => session.allowAutoPay,
+                          _ => true,
+                        }))
                       SizedBox(
                         width: w,
                         child: Padding(

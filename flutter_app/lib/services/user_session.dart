@@ -1042,6 +1042,9 @@ class UserSession extends ChangeNotifier {
   /// `isClassBookingEnabled` — Book a Class (old `HomePageViewModel.cs:370`).
   bool get allowClassBooking => _notDenied(authData?['isClassBookingEnabled']);
 
+  /// `isAutoPayEnabled` — the club's Auto Pay switch (Payments tile, All Features, /autopay).
+  bool get allowAutoPay => _notDenied(authData?['isAutoPayEnabled']);
+
   /// One entry of the login payload's `permissions` map, keyed by the legacy
   /// `Permission` enum id. The map arrives keyed by number or by string
   /// depending on the serializer; an absent entry stays allowed.

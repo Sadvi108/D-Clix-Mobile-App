@@ -461,38 +461,40 @@ class _PaymentsScreenState extends State<PaymentsScreen>
       ));
     }
     if (_seg == 'pay') {
-      body.add(Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Touchable(
-          onPress: () => context.push('/autopay'),
-          child: Container(
-            padding: const EdgeInsets.all(13),
-            decoration: cardDeco().copyWith(borderRadius: BorderRadius.circular(Radii.md)),
-            child: Row(children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
-                child: Icon(Ion.syncCircleOutline, size: 20, color: c.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Auto Pay',
-                      maxLines: 1, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary)),
-                  const SizedBox(height: 2),
-                  Text('Settle your fees automatically each month',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: c.textSecondary)),
-                ]),
-              ),
-              const SizedBox(width: 12),
-              Icon(Ion.chevronForward, size: 18, color: c.textMuted),
-            ]),
+      if (session.allowAutoPay) {
+        body.add(Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Touchable(
+            onPress: () => context.push('/autopay'),
+            child: Container(
+              padding: const EdgeInsets.all(13),
+              decoration: cardDeco().copyWith(borderRadius: BorderRadius.circular(Radii.md)),
+              child: Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(color: c.surfaceAlt, shape: BoxShape.circle),
+                  child: Icon(Ion.syncCircleOutline, size: 20, color: c.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Auto Pay',
+                        maxLines: 1, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text('Settle your fees automatically each month',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: c.textSecondary)),
+                  ]),
+                ),
+                const SizedBox(width: 12),
+                Icon(Ion.chevronForward, size: 18, color: c.textMuted),
+              ]),
+            ),
           ),
-        ),
-      ));
+        ));
+      }
       if (_dues.loading) body.add(const SkeletonList(rows: 4, lines: 2, padding: EdgeInsets.only(top: 4)));
       if (!_dues.loading && _dues.error != null && visible.isEmpty) {
         body.add(ErrorState(message: _dues.error, onRetry: _dues.reload));

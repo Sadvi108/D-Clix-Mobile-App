@@ -138,10 +138,15 @@ String? permissionRedirect(String loc) {
     '/instructor/collections' => !s.allowViewCollections,
     _ when loc.startsWith('/instructor/collections/') => !s.allowViewReceipts,
     '/book-class' => !s.allowClassBooking,
+    '/autopay' => !s.allowAutoPay,
     _ => false,
   };
   if (!denied) return null;
   if (loc == '/book-class') return '/schedule';
+  // Pay Your Dues, not the Payments tab: /autopay is pushed from anywhere (a notification
+  // tap), and redirecting a push from outside the tab-bar shell onto a shell route makes
+  // go_router clone the shell — a blank page in release. /invoices is outside the shell too.
+  if (loc == '/autopay') return '/invoices';
   return loc.startsWith('/instructor/collections') ? '/instructor/home' : '/instructor/reports';
 }
 

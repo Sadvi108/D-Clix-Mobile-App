@@ -6,12 +6,15 @@ import 'package:dclix_app/screens/book_class_screen.dart';
 import 'package:dclix_app/screens/instructor_collections_screen.dart';
 import 'package:dclix_app/screens/instructor_home_screen.dart';
 import 'package:dclix_app/screens/more_screen.dart';
+import 'package:dclix_app/screens/outstanding_invoices_screen.dart';
+import 'package:dclix_app/screens/payments_screen.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/user_session.dart';
 import 'package:dclix_app/theme/app_theme.dart';
 import 'package:dclix_app/widgets/club_tab_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
@@ -164,4 +167,84 @@ void main() {
     expect(find.text('Collections'), findsNothing);
     expect(find.text('Check-In'), findsOneWidget);
   });
+
+  test('isAutoPayEnabled maps to allowAutoPay, and an absent flag stays allowed',
+      () {
+    session.authData = {'isAutoPayEnabled': true};
+    expect(session.allowAutoPay, isTrue);
+
+    session.authData = {};
+    expect(session.allowAutoPay, isTrue,
+        reason: 'the backend does not send every switch to every account');
+
+    session.authData = {'isAutoPayEnabled': false};
+    expect(session.allowAutoPay, isFalse);
+  });
+
+  test('a disabled Auto Pay sends /autopay to Pay Your Dues', () {
+    expect(permissionRedirect('/autopay'), isNull,
+        reason: 'no isAutoPayEnabled in the login payload: allowed');
+
+    session.authData = {'isAutoPayEnabled': false};
+    expect(permissionRedirect('/autopay'), '/invoices');
+  });
+
+  testWidgets('a disabled /autopay pushed from outside the tab bar lands cleanly',
+      (tester) async {
+    // A notification tap pushes /autopay from wherever the member is. Redirecting that push
+    // onto a tab-bar route (/payments) from a page outside the shell (/chat) makes go_router
+    // clone the ShellRoute: a duplicate GlobalKey in debug, a blank page in release. /invoices
+    // lives outside the shell, like /autopay itself, so the push stays a plain push.
+    tester.view.physicalSize = const Size(2400, 3600);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    session.authData = {...session.authData!, 'isAutoPayEnabled': false};
+    ApiService.client =
+        MockClient((_) async => http.Response('{"status":200,"data":[]}', 200));
+    final router = GoRouter(
+      initialLocation: '/chat',
+      routes: appRouter.configuration.routes,
+      redirect: (_, state) => permissionRedirect(state.matchedLocation),
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<UserSession>.value(
+      value: session,
+      child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+    ));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    router.push('/autopay');
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(tester.takeException(), isNull);
+    expect(find.byType(OutstandingInvoicesScreen), findsOneWidget);
+    session.stopNotificationPolling();
+  });
+
+  for (final (flag, shown) in [(false, false), (null, true)]) {
+    testWidgets(
+        'Payments and All Features ${shown ? 'show' : 'hide'} Auto Pay '
+        'when isAutoPayEnabled is ${flag ?? 'absent'}', (tester) async {
+      // Tall enough that All Features builds every section (its list is lazy).
+      tester.view.physicalSize = const Size(2400, 7200);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      session.authData = {
+        ...session.authData!,
+        if (flag != null) 'isAutoPayEnabled': flag,
+      };
+      ApiService.client = MockClient(
+          (_) async => http.Response('{"status":200,"data":[]}', 200));
+      final autoPay = shown ? findsOneWidget : findsNothing;
+
+      await tester.pumpWidget(
+          wrap(const Scaffold(body: PaymentsScreen()), provideSession: true));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Auto Pay'), autoPay);
+
+      await tester.pumpWidget(wrap(const MoreScreen()));
+      expect(find.text('Auto Pay'), autoPay);
+    });
+  }
 }
