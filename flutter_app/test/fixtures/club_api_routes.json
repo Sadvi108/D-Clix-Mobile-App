@@ -29,6 +29,12 @@
  "/AutoPay/Finalizing": [
   "GET"
  ],
+ "/AutoPay/Pause": [
+  "POST"
+ ],
+ "/AutoPay/Resume": [
+  "POST"
+ ],
  "/AutoPay/Status": [
   "GET"
  ],

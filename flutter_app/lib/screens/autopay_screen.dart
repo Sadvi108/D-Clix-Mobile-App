@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -15,10 +17,11 @@ import 'payment/bcpg_webview_screen.dart';
 /// Auto Pay — save a debit or credit card on Boost once, and pending invoices are paid
 /// from it.
 ///
-/// Off: one switch. Turning it on asks the monthly amount (and shows a parent that the
-/// whole family is covered), then hands over to Boost's save-card page. The app never sees
-/// the card number. On: Pause / Resume and Disable replace the switch, because those are
-/// three states of one lifecycle, not an on/off setting. See [AutoPay] for the contract.
+/// Off: one switch. Turning it on asks which of the club's invoice types to pay and a limit
+/// per payment (and shows a parent that the whole family is covered), then the member agrees
+/// to the recurring billing terms, then Boost's save-card page takes over. The app never
+/// sees the card number. On: Pause / Resume and Disable replace the switch, because those
+/// are three states of one lifecycle, not an on/off setting. See [AutoPay] for the contract.
 class AutoPayScreen extends StatefulWidget {
   /// Where the mandate comes from. A seam so tests can show every state.
   final Future<AutoPayMandate> Function() load;
@@ -26,12 +29,22 @@ class AutoPayScreen extends StatefulWidget {
   /// Who Auto Pay covers. A seam for the same reason.
   final Future<AutoPayFamily> Function() family;
 
+  /// The invoice types the club lets Auto Pay pay. A seam so tests need no signed-in session.
+  final List<String> Function() clubTypes;
+
   const AutoPayScreen(
-      {super.key, this.load = AutoPay.status, this.family = AutoPay.family});
+      {super.key,
+      this.load = AutoPay.status,
+      this.family = AutoPay.family,
+      this.clubTypes = AutoPay.clubInvoiceTypes});
 
   @override
   State<AutoPayScreen> createState() => _AutoPayScreenState();
 }
+
+/// What the member set up: the invoice types to pay (null when the club sent none, so the
+/// server decides) and the most one payment may take.
+typedef _Plan = ({List<String>? invoiceTypes, double? perChargeCap});
 
 class _AutoPayScreenState extends State<AutoPayScreen> {
   AutoPayMandate _m = AutoPayMandate.off;
@@ -88,34 +101,48 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
     }
   }
 
-  /// The switch was turned on: amount (and family) first, then Boost. The sheet opens at
-  /// once; the family list fills in when the sibling lookup lands.
+  /// The switch was turned on: what to pay (and family) first, then the agreement, then
+  /// Boost. The sheet opens at once; the family list fills in when the sibling lookup lands.
   Future<void> _start() async {
-    final amount = await showModalBottomSheet<double>(
+    final plan = await showModalBottomSheet<_Plan>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: context.appColors.background,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xxl))),
-      builder: (_) => _SetupSheet(family: _familyFuture),
+      builder: (_) => _SetupSheet(family: _familyFuture, types: widget.clubTypes()),
     );
-    if (amount == null || !mounted) return;
-    await _link(monthlyAmount: amount, family: await _familyFuture);
+    if (plan == null || !mounted) return;
+    await _agreeThenLink(plan);
   }
 
-  /// A new card for the same plan: keep the amount and family, only the card changes.
-  Future<void> _changeCard() async =>
-      _link(monthlyAmount: _m.monthlyAmount, family: await _familyFuture);
+  /// A new card for the same plan: only the card changes. The member agrees again, because
+  /// the cardholder declaration is about the card.
+  Future<void> _changeCard() => _agreeThenLink((
+        invoiceTypes: _m.invoiceTypes.isEmpty ? null : _m.invoiceTypes,
+        perChargeCap: _m.perChargeCap,
+      ));
+
+  /// The last step before Boost: the member reviews the plan and agrees to the recurring
+  /// billing terms. Backing out enables nothing.
+  Future<void> _agreeThenLink(_Plan plan) async {
+    final family = await _familyFuture;
+    if (!mounted) return;
+    final agreed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => _ConsentPage(plan: plan, family: family)));
+    if (agreed == true && mounted) await _link(plan);
+  }
 
   /// Save a card, or replace the saved one. Both go through Boost's page.
-  Future<void> _link({double? monthlyAmount, AutoPayFamily family = const []}) async {
+  Future<void> _link(_Plan plan) async {
     final before = _m;
     setState(() => _busy = true);
     try {
       final start = await AutoPay.setup(
-          monthlyAmount: monthlyAmount,
-          studentIds: [for (final m in family) m.id]);
+          invoiceTypes: plan.invoiceTypes,
+          perChargeCap: plan.perChargeCap,
+          consentVersion: kAutoPayTermsVersion);
       if (!mounted) return;
       final result = await BcpgWebViewScreen.open(context,
           paymentUrl: start.url, referenceId: start.referenceId ?? '');
@@ -268,8 +295,8 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
             PremiumRow(
               icon: Ion.walletOutline,
               tint: PremiumTint.green,
-              title: 'Set your monthly amount',
-              subtitle: 'Family accounts are covered together',
+              title: 'Choose what it pays',
+              subtitle: 'Invoice types and a limit per payment',
             ),
             PremiumRow(
               icon: Ion.cardOutline,
@@ -297,12 +324,19 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
           ]),
           const SectionLabel('Details'),
           GroupCard(children: [
-            if (_m.monthlyAmount != null)
+            if (_m.invoiceTypes.isNotEmpty)
+              PremiumRow(
+                icon: Ion.documentTextOutline,
+                tint: PremiumTint.teal,
+                title: 'Pays',
+                subtitle: _m.invoiceTypes.join(', '),
+              ),
+            if (_m.perChargeCap != null)
               PremiumRow(
                 icon: Ion.walletOutline,
                 tint: PremiumTint.green,
-                title: 'Monthly amount',
-                subtitle: 'RM ${_m.monthlyAmount!.toStringAsFixed(2)}',
+                title: 'Limit per payment',
+                subtitle: 'RM ${_m.perChargeCap!.toStringAsFixed(2)}',
               ),
             if (_family.length > 1)
               PremiumRow(
@@ -381,8 +415,8 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
           'OFF',
           const Color(0xFFCBD5E1),
           'Never miss a monthly fee',
-          'Save a debit or credit card once and your invoices are paid on time, '
-              'every month.'
+          'Save a debit or credit card once and the invoices you choose are paid as '
+              'they fall due.'
         ),
       AutoPayState.pending => (
           'PENDING',
@@ -543,12 +577,15 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-/// The small window after the switch goes on: how much to take each month, and — for a
-/// family — who it covers. Everyone is covered; there is no per-member opt-out, so the
-/// list is read-only on purpose.
+/// The small window after the switch goes on: the most one payment may take, which of the
+/// club's invoice types to pay, and — for a family — who it covers. Everyone is covered;
+/// there is no per-member opt-out, so the family list is read-only on purpose.
 class _SetupSheet extends StatefulWidget {
   final Future<AutoPayFamily> family;
-  const _SetupSheet({required this.family});
+
+  /// The club's allowed invoice types. Empty: the club sent none, so there is no choice.
+  final List<String> types;
+  const _SetupSheet({required this.family, required this.types});
 
   @override
   State<_SetupSheet> createState() => _SetupSheetState();
@@ -556,7 +593,10 @@ class _SetupSheet extends StatefulWidget {
 
 class _SetupSheetState extends State<_SetupSheet> {
   final _amount = TextEditingController();
+  // All ticked to start: the member leaves out what they would rather pay by hand.
+  late final _picked = {...widget.types};
   String? _error;
+  String? _typesError;
 
   @override
   void dispose() {
@@ -564,13 +604,25 @@ class _SetupSheetState extends State<_SetupSheet> {
     super.dispose();
   }
 
+  void _toggle(String type) => setState(() {
+        if (!_picked.remove(type)) _picked.add(type);
+        if (_picked.isNotEmpty) _typesError = null;
+      });
+
   void _continue() {
-    final v = double.tryParse(_amount.text.trim());
-    if (v == null || v <= 0) {
-      setState(() => _error = 'Enter the amount to take each month.');
-      return;
-    }
-    Navigator.pop(context, v);
+    final cap = double.tryParse(_amount.text.trim());
+    final noCap = cap == null || cap <= 0;
+    final noTypes = widget.types.isNotEmpty && _picked.isEmpty;
+    setState(() {
+      _error = noCap ? 'Enter your limit per payment.' : null;
+      _typesError = noTypes ? 'Choose at least one type of invoice.' : null;
+    });
+    if (noCap || noTypes) return;
+    Navigator.pop<_Plan>(context, (
+      // In the club's order, not the order they were ticked in.
+      invoiceTypes: widget.types.isEmpty ? null : widget.types.where(_picked.contains).toList(),
+      perChargeCap: cap,
+    ));
   }
 
   @override
@@ -593,11 +645,11 @@ class _SetupSheetState extends State<_SetupSheet> {
                         fontWeight: FontWeight.w800,
                         color: c.textPrimary)),
                 const SizedBox(height: 4),
-                Text('Then add your card on Boost\'s secure page.',
+                Text('Then agree to the terms and add your card on Boost\'s secure page.',
                     style: TextStyle(fontSize: 13, color: c.textSecondary)),
               ]),
             ),
-            const SectionLabel('Monthly amount', padding: labelPad),
+            const SectionLabel('Limit per payment', padding: labelPad),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gaps.xl),
               child: TextField(
@@ -623,7 +675,7 @@ class _SetupSheetState extends State<_SetupSheet> {
                   ),
                   prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
                   hintText: '0.00',
-                  helperText: 'Taken from your card each month.',
+                  helperText: 'Auto Pay never takes more than this in one payment.',
                   errorText: _error,
                   filled: true,
                   fillColor: c.surface,
@@ -636,6 +688,22 @@ class _SetupSheetState extends State<_SetupSheet> {
                 onSubmitted: (_) => _continue(),
               ),
             ),
+            if (widget.types.isNotEmpty) ...[
+              const SectionLabel('Invoices to pay', padding: labelPad),
+              GroupCard(children: [
+                for (final t in widget.types)
+                  _CheckRow(title: t, checked: _picked.contains(t), onTap: () => _toggle(t)),
+              ]),
+              if (_typesError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gaps.xl + 4, Gaps.sm, Gaps.xl + 4, 0),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(_typesError!,
+                        style: TextStyle(fontSize: 12, height: 1.4, color: c.danger)),
+                  ),
+                ),
+            ],
             FutureBuilder<AutoPayFamily>(
               future: widget.family,
               builder: (context, snap) {
@@ -674,7 +742,7 @@ class _SetupSheetState extends State<_SetupSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gaps.xl),
               child: GradientButton(
-                label: 'Continue to Boost',
+                label: 'Continue',
                 trailingIcon: AppIcons.arrow_forward,
                 onPressed: _continue,
               ),
@@ -684,4 +752,274 @@ class _SetupSheetState extends State<_SetupSheet> {
       ),
     );
   }
+}
+
+/// A row that ticks on and off. The whole row is the target, and a screen reader hears one
+/// checkbox named by the title.
+class _CheckRow extends StatelessWidget {
+  final String title;
+  final bool checked;
+  final VoidCallback onTap;
+  const _CheckRow({required this.title, required this.checked, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return Semantics(
+      checked: checked,
+      label: title,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: PremiumRow(
+            icon: Ion.documentTextOutline,
+            tint: PremiumTint.teal,
+            title: title,
+            trailing: Icon(checked ? Ion.checkbox : Ion.squareOutline,
+                size: 24, color: checked ? c.primary : c.textMuted),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Which text of the recurring billing terms a member agreed to. Enable sends it so the
+/// server records it: change it whenever [_terms] changes.
+const kAutoPayTermsVersion = 'recurring-terms-2026-10-02';
+
+/// The Recurring Billing Terms and Cancellation Policy, in plain words. Only what the app
+/// and the club actually do: no refund timelines or fees the club has not stated.
+const _terms = [
+  (
+    'What gets charged',
+    'Only invoices of the types you chose, for everyone Auto Pay covers. No single payment '
+        'is more than your limit per payment. Anything Auto Pay does not pay stays in Fees Due.'
+  ),
+  (
+    'When you are charged',
+    'As those invoices fall due. Each payment is taken from the card you saved on Boost\'s '
+        'secure page.'
+  ),
+  (
+    'Checking your card',
+    'When you save your card, Boost checks it with a RM 1.00 hold that is voided, not '
+        'charged.'
+  ),
+  ('Receipts', 'Every payment appears in Payment History.'),
+  (
+    'Pausing and resuming',
+    'Tap Pause on the Auto Pay screen to stop payments for a while. Your card stays saved '
+        'and nothing is taken until you tap Resume. Pay anything that falls due in the '
+        'meantime from Fees Due.'
+  ),
+  (
+    'Cancelling',
+    'Tap Disable on the Auto Pay screen. Auto Pay turns off and your card is removed. A '
+        'payment that has already started may still complete.'
+  ),
+  (
+    'If a payment fails',
+    'Auto Pay shows Action needed and the invoice stays in Fees Due. Update your card on '
+        'the Auto Pay screen, or pay the invoice from Fees Due.'
+  ),
+  (
+    'Questions about a charge',
+    'Contact your academy about any charge you do not recognise or think is wrong.'
+  ),
+];
+
+/// The last step before Boost: what Auto Pay will do, and the member's agreement to the
+/// recurring billing terms. Pops true only once the box is ticked and Agree is tapped;
+/// Back pops false and nothing is enabled.
+class _ConsentPage extends StatefulWidget {
+  final _Plan plan;
+  final AutoPayFamily family;
+  const _ConsentPage({required this.plan, required this.family});
+
+  @override
+  State<_ConsentPage> createState() => _ConsentPageState();
+}
+
+class _ConsentPageState extends State<_ConsentPage> {
+  static const _lead =
+      'I am the cardholder or an authorised account user, and I agree to the ';
+  static const _policy = 'Recurring Billing Terms and Cancellation Policy';
+
+  bool _agreed = false;
+  late final _policyLink = TapGestureRecognizer()..onTap = _showTerms;
+
+  @override
+  void dispose() {
+    _policyLink.dispose();
+    super.dispose();
+  }
+
+  void _toggle() => setState(() => _agreed = !_agreed);
+
+  void _showTerms() => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: context.appColors.background,
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .85),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xxl))),
+        builder: (context) {
+          final c = context.appColors;
+          return SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(Gaps.xl + 4, 0, Gaps.xl + 4, Gaps.xl),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Semantics(
+                  header: true,
+                  child: Text(_policy,
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800, color: c.textPrimary)),
+                ),
+                for (final (heading, body) in _terms) ...[
+                  const SizedBox(height: Gaps.lg),
+                  Semantics(
+                    header: true,
+                    child: Text(heading,
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700, color: c.textPrimary)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(body,
+                      style: TextStyle(fontSize: 13.5, height: 1.45, color: c.textSecondary)),
+                ],
+              ]),
+            ),
+          );
+        },
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final types = widget.plan.invoiceTypes ?? const [];
+    final cap = widget.plan.perChargeCap;
+    return Scaffold(
+      backgroundColor: c.background,
+      body: Column(children: [
+        RnHeader(title: 'Review and agree', onBack: () => Navigator.pop(context, false)),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: Gaps.lg),
+            children: [
+              const SectionLabel('Your Auto Pay',
+                  padding: EdgeInsets.fromLTRB(Gaps.xl + 4, Gaps.sm, Gaps.xl + 4, 10)),
+              GroupCard(children: [
+                PremiumRow(
+                  icon: Ion.documentTextOutline,
+                  tint: PremiumTint.teal,
+                  titleLines: 3,
+                  title:
+                      'Pays: ${types.isEmpty ? 'invoices from your academy' : types.join(', ')}',
+                ),
+                if (cap != null)
+                  PremiumRow(
+                    icon: Ion.walletOutline,
+                    tint: PremiumTint.green,
+                    titleLines: 3,
+                    title: 'Up to RM ${cap.toStringAsFixed(2)} per payment',
+                  ),
+                if (widget.family.length > 1)
+                  PremiumRow(
+                    icon: Ion.peopleOutline,
+                    tint: PremiumTint.violet,
+                    titleLines: 3,
+                    title: 'Covers: ${widget.family.map((m) => m.name).join(', ')}',
+                  ),
+                const PremiumRow(
+                  icon: Ion.cardOutline,
+                  tint: PremiumTint.indigo,
+                  titleLines: 3,
+                  title: 'Card: saved on Boost\'s secure page',
+                  subtitle: 'D-CLIX never sees your card number',
+                ),
+                const PremiumRow(
+                  icon: Ion.powerOutline,
+                  tint: PremiumTint.slate,
+                  titleLines: 3,
+                  title: 'Turn it off any time: Auto Pay → Disable',
+                ),
+              ]),
+            ],
+          ),
+        ),
+        // Pinned, so the agreement and its button never scroll apart.
+        Container(
+          padding: EdgeInsets.fromLTRB(
+              Gaps.xl, Gaps.md, Gaps.xl, Gaps.lg + MediaQuery.paddingOf(context).bottom),
+          decoration: BoxDecoration(
+              color: c.background, border: Border(top: BorderSide(color: c.borderLight))),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _agreement(c),
+            const SizedBox(height: Gaps.md),
+            GradientButton(
+              label: 'Agree and continue to Boost',
+              trailingIcon: AppIcons.arrow_forward,
+              onPressed: _agreed ? () => Navigator.pop(context, true) : null,
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  /// The whole row ticks the box, except the policy, which opens the terms instead. One
+  /// checkbox to a screen reader, with the terms as its custom action.
+  Widget _agreement(AppColors c) => Semantics(
+        checked: _agreed,
+        label: '$_lead$_policy.',
+        onTap: _toggle,
+        customSemanticsActions: {
+          const CustomSemanticsAction(label: 'Read the $_policy'): _showTerms
+        },
+        excludeSemantics: true,
+        child: Material(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(Radii.lg),
+          child: InkWell(
+            onTap: _toggle,
+            borderRadius: BorderRadius.circular(Radii.lg),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Radii.lg),
+                border: Border.all(color: _agreed ? c.primary : c.border),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(_agreed ? Ion.checkbox : Ion.squareOutline,
+                    size: 24, color: _agreed ? c.primary : c.textMuted),
+                const SizedBox(width: Gaps.md),
+                Expanded(
+                  child: Text.rich(TextSpan(
+                    style: TextStyle(fontSize: 13.5, height: 1.45, color: c.textPrimary),
+                    children: [
+                      const TextSpan(text: _lead),
+                      TextSpan(
+                        text: _policy,
+                        recognizer: _policyLink,
+                        style: TextStyle(
+                            color: c.primary,
+                            fontWeight: FontWeight.w700,
+                            decoration: TextDecoration.underline,
+                            decorationColor: c.primary),
+                      ),
+                      const TextSpan(text: '.'),
+                    ],
+                  )),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      );
 }

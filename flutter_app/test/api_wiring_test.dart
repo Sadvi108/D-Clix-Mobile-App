@@ -3,7 +3,7 @@
 // This is a STATIC audit: it scans every .dart file under lib/, pulls out each
 // `ApiService.<verb>('<path>')` call, and checks path and verb against
 // test/fixtures/club_api_routes.json — the route table taken from the live UAT swagger
-// (78 paths, fetched 2026-09-27).
+// (80 paths, fetched 2026-10-02).
 //
 // It catches the failure mode no amount of Dart type-checking can: a path typo, a renamed
 // route, or a GET against a POST-only endpoint. Those compile perfectly and fail only
@@ -127,7 +127,7 @@ void main() {
     expect(calls.length, greaterThan(60),
         reason:
             'only found ${calls.length} calls — the parser is probably broken');
-    expect(routes.length, 78);
+    expect(routes.length, 80);
     expect(calls.map((c) => c.file).toSet(), contains('boost_payment.dart'));
   });
 
@@ -166,15 +166,12 @@ void main() {
     // Manual attendance reads the route table itself and only calls its proposed route once
     // the server lists it (docs/specs/2026-09-15-manual-attendance.md).
     const manualAttendance = {'/swagger/v1/swagger.json', '/Attendance/MarkByInstructor'};
-    // Auto Pay's pause / resume, built ahead of the server; a 404 says "not available yet".
-    const autoPayProposed = {'/AutoPay/Pause', '/AutoPay/Resume'};
     final missing = calls
         .where((c) =>
             resolve(c.path, routes.keys) == null &&
             !(c.file == 'online_submissions.dart' &&
                 proposed.contains(normalise(c.path))) &&
-            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))) &&
-            !(c.file == 'autopay.dart' && autoPayProposed.contains(normalise(c.path))))
+            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))))
         .toList();
     expect(missing, isEmpty,
         reason:

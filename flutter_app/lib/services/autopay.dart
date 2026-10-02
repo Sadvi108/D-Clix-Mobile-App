@@ -7,24 +7,25 @@ import 'user_session.dart';
 /// Auto Pay: a debit or credit card the member saves once on Boost's page. A server job
 /// then pays that member's pending invoices with it.
 ///
-/// Club.Api's contract (UAT swagger, 2026-09-27). The app sends only its bearer token; the
+/// Club.Api's contract (UAT swagger, 2026-10-02). The app sends only its bearer token; the
 /// merchant secret stays on the server:
 ///
-///   GET  /AutoPay/Status   -> data: {enabled, cardBrand, cardLast4, cardExpMonth, cardExpYear}
-///   POST /AutoPay/Enable   -> data: the Boost card page URL. The member enters the card there;
-///        Boost returns the browser to /AutoPay/Finalizing, which saves the token and redirects
-///        to /Payment/Completed/{Success|Failed} — where the WebView hands control back.
+///   GET  /AutoPay/Status   -> data: {enabled, status, cardBrand, cardLast4, cardExpMonth,
+///        cardExpYear, selectedInvoiceTypes, perChargeCap}. Status "Paused" is on hold.
+///   POST /AutoPay/Enable   body {invoiceTypes, perChargeCap, consentVersion}: which of the
+///        club's invoice types to pay, the most one payment may take, and the recurring billing
+///        terms the member agreed to. -> data: the Boost card page URL. The member enters the
+///        card there; Boost returns the browser to /AutoPay/Finalizing, which saves the token
+///        and redirects to /Payment/Completed/{Success|Failed} — where the WebView hands
+///        control back. Every family member is covered; there is no per-member field.
+///   POST /AutoPay/Pause, POST /AutoPay/Resume (no body): hold payments, keeping the card.
 ///   POST /AutoPay/Disable  -> unlinks the card; turning it on again means entering a card again.
 ///
-/// Proposed, not on UAT yet (2026-09-30) — the screen is built against them:
-///   POST /AutoPay/Enable   body {monthlyAmount, studentIds}: the amount to take each month, and
-///        every family member (a family is all in or all out). Today's Enable takes no body, so
-///        the server ignores both until it reads them.
-///   POST /AutoPay/Pause, POST /AutoPay/Resume: hold payments without removing the card.
-///   Status gains `paused` and `monthlyAmount`.
+/// The club's own settings come with sign-in, not from /AutoPay: `autoPayAllowedInvoiceTypes`
+/// in [UserSession.authData] — see [AutoPay.clubInvoiceTypes].
 ///
-/// Charging the saved card each month is the server's job, never the app's. /AutoPay is served
-/// by UAT only, so [ApiService.isBoostPath] sends it there. A 404 reads as "not open yet".
+/// Charging the saved card is the server's job, never the app's. /AutoPay is served by UAT
+/// only, so [ApiService.isBoostPath] sends it there. A 404 reads as "not open yet".
 /// Everyone one Auto Pay covers: the signed-in account and its siblings.
 typedef AutoPayFamily = List<({int id, String name})>;
 
@@ -56,8 +57,12 @@ class AutoPayMandate {
   /// The server's explanation when [state] is [AutoPayState.failed].
   final String? reason;
 
-  /// What the member chose to have taken each month, when the server reports it.
-  final double? monthlyAmount;
+  /// The invoice types Auto Pay pays ("Monthly", "Registration"); empty when the server
+  /// reported none.
+  final List<String> invoiceTypes;
+
+  /// The most Auto Pay takes in one payment, when the server reports it.
+  final double? perChargeCap;
 
   const AutoPayMandate(
     this.state, {
@@ -66,7 +71,8 @@ class AutoPayMandate {
     this.expiry,
     this.nextCharge,
     this.reason,
-    this.monthlyAmount,
+    this.invoiceTypes = const [],
+    this.perChargeCap,
   });
 
   static const off = AutoPayMandate(AutoPayState.off);
@@ -81,11 +87,12 @@ class AutoPayMandate {
 
     final month = int.tryParse(s('cardExpMonth') ?? '');
     final year = int.tryParse(s('cardExpYear') ?? '');
-    final amount = json['monthlyAmount'];
+    final cap = json['perChargeCap'];
     return AutoPayMandate(
       json['enabled'] != true
           ? AutoPayState.off
-          : json['paused'] == true
+          // `status` replaced an earlier `paused` flag; either one means on hold.
+          : s('status')?.toLowerCase() == 'paused' || json['paused'] == true
               ? AutoPayState.paused
               : AutoPayState.active,
       brand: s('cardBrand'),
@@ -93,7 +100,8 @@ class AutoPayMandate {
       expiry: month == null || year == null
           ? null
           : '${month.toString().padLeft(2, '0')}/${(year % 100).toString().padLeft(2, '0')}',
-      monthlyAmount: amount is num ? amount.toDouble() : null,
+      invoiceTypes: _names(json['selectedInvoiceTypes']),
+      perChargeCap: cap is num ? cap.toDouble() : null,
     );
   }
 
@@ -121,12 +129,14 @@ class AutoPay {
   }
 
   /// Ask the server for Boost's save-card page. Also used to replace the saved card.
+  /// A null leaves its field out, and the server applies its own default.
   static Future<PaymentStart> setup(
-      {double? monthlyAmount, List<int> studentIds = const []}) async {
+      {List<String>? invoiceTypes, double? perChargeCap, String? consentVersion}) async {
     try {
       final res = await ApiService.post('/AutoPay/Enable', {
-        if (monthlyAmount != null) 'monthlyAmount': monthlyAmount,
-        if (studentIds.isNotEmpty) 'studentIds': studentIds,
+        if (invoiceTypes != null) 'invoiceTypes': invoiceTypes,
+        if (perChargeCap != null) 'perChargeCap': perChargeCap,
+        if (consentVersion != null) 'consentVersion': consentVersion,
       });
       final url = BoostPayment.urlFrom(res);
       if (url == null) {
@@ -149,13 +159,16 @@ class AutoPay {
     }
   }
 
-  static Future<void> pause() => _hold('/AutoPay/Pause', 'Pausing');
+  // Literal paths, so api_wiring_test can see and check both routes.
+  static Future<void> pause() =>
+      _hold(() => ApiService.post('/AutoPay/Pause', {}), 'Pausing');
 
-  static Future<void> resume() => _hold('/AutoPay/Resume', 'Resuming');
+  static Future<void> resume() =>
+      _hold(() => ApiService.post('/AutoPay/Resume', {}), 'Resuming');
 
-  static Future<void> _hold(String path, String what) async {
+  static Future<void> _hold(Future<dynamic> Function() post, String what) async {
     try {
-      await ApiService.post(path, {});
+      await post();
     } on ApiException catch (e) {
       // Not "not open yet": Auto Pay itself is on, only this action waits on the server.
       if (e.statusCode == 404) {
@@ -180,4 +193,16 @@ class AutoPay {
     final seen = <int>{};
     return out.where((m) => m.id > 0 && m.name.isNotEmpty && seen.add(m.id)).toList();
   }
+
+  /// The invoice types this club lets Auto Pay pay, from the sign-in payload's
+  /// `autoPayAllowedInvoiceTypes` (e.g. ["Monthly", "Registration"]). Empty means the club
+  /// sent none.
+  static List<String> clubInvoiceTypes() =>
+      _names(UserSession.instance.authData?['autoPayAllowedInvoiceTypes']);
 }
+
+/// A server list of names, trimmed, without blanks, repeats or anything not text. Anything
+/// but a list is no names.
+List<String> _names(Object? v) => v is List
+    ? [...{for (final e in v) if (e is String && e.trim().isNotEmpty) e.trim()}]
+    : const [];

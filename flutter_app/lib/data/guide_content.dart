@@ -183,19 +183,21 @@ const kGuideSteps = <GuideStep>[
     icon: AppIcons.autorenew,
     title: 'Auto Pay',
     intro:
-        'Save a debit or credit card once, set how much to take each month, and your pending invoices are paid from it for you.',
+        'Save a debit or credit card once, choose which invoices it pays and a limit per payment, and those invoices are paid from your card as they fall due.',
     details: [
       GuideDetail(1, 'Turn it on',
-          'Flip the Auto Pay switch and enter the amount to take from your card each month. If more than one member of your family trains at the academy, everyone is covered together.'),
-      GuideDetail(2, 'Save your card on Boost',
+          'Flip the Auto Pay switch. Tick the types of invoice it should pay — your academy decides which are on offer — and set a limit per payment: Auto Pay never takes more than that in one payment. If more than one member of your family trains at the academy, everyone is covered together.'),
+      GuideDetail(2, 'Review and agree',
+          'Check the summary, then tick the box to agree to the Recurring Billing Terms and Cancellation Policy. Tap the policy\'s name to read it first. Going back from this page leaves Auto Pay off.'),
+      GuideDetail(3, 'Save your card on Boost',
           'You are taken to Boost\'s secure page to enter your card and confirm it with the OTP from your bank. D-CLIX never sees your card number. Boost checks the card with a RM 1.00 hold that is voided, not charged.'),
-      GuideDetail(3, 'Pause and resume',
+      GuideDetail(4, 'Pause and resume',
           'Going away, or paying another way for a while? Tap Pause. Your card stays saved and nothing is taken until you tap Resume.'),
-      GuideDetail(4, 'After that',
-          'The club pays your pending invoices from the saved card, and each receipt appears in Payment History.'),
+      GuideDetail(5, 'After that',
+          'The club pays the invoice types you chose from the saved card, never more than your limit in one payment, and each receipt appears in Payment History. Anything Auto Pay does not pay stays in Fees Due.'),
     ],
     tips: [
-      'Tap your card on the Auto Pay screen to save a different one.',
+      'Tap your card on the Auto Pay screen to save a different one. You agree to the terms again for the new card.',
       'Tap Disable to turn Auto Pay off and remove the card. After that you pay from Fees Due as before.',
     ],
     note:

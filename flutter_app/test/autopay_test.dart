@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/autopay.dart';
+import 'package:dclix_app/services/user_session.dart';
 
 http.Response _json(Object body, [int status = 200]) => http.Response(
     jsonEncode(body), status,
@@ -54,21 +55,54 @@ void main() {
       expect((await AutoPay.status()).state, AutoPayState.off);
     });
 
-    test('paused reads as paused, and the monthly amount comes through', () async {
+    test('status "Paused" reads as paused, and the plan comes through', () async {
       ApiService.client = MockClient((_) async => _json(_ok({
             'enabled': true,
-            'paused': true,
+            'status': 'Paused',
             'cardLast4': '5000',
-            'monthlyAmount': 170,
+            'selectedInvoiceTypes': ['Monthly', 'Registration'],
+            'perChargeCap': 170,
           })));
       final m = await AutoPay.status();
       expect(m.state, AutoPayState.paused);
-      expect(m.monthlyAmount, 170);
+      expect(m.invoiceTypes, ['Monthly', 'Registration']);
+      expect(m.perChargeCap, 170);
+    });
+
+    test('"paused" in any case is paused; any other status is active', () async {
+      for (final (status, state) in [
+        ('paused', AutoPayState.paused),
+        ('PAUSED', AutoPayState.paused),
+        ('Active', AutoPayState.active),
+        (null, AutoPayState.active),
+      ]) {
+        ApiService.client =
+            MockClient((_) async => _json(_ok({'enabled': true, 'status': status})));
+        expect((await AutoPay.status()).state, state, reason: 'status $status');
+      }
+    });
+
+    test('the old `paused: true` still reads as paused', () async {
+      ApiService.client =
+          MockClient((_) async => _json(_ok({'enabled': true, 'paused': true})));
+      expect((await AutoPay.status()).state, AutoPayState.paused);
     });
 
     test('paused without enabled is still off', () async {
-      ApiService.client = MockClient((_) async => _json(_ok({'enabled': false, 'paused': true})));
+      ApiService.client = MockClient((_) async =>
+          _json(_ok({'enabled': false, 'status': 'Paused', 'paused': true})));
       expect((await AutoPay.status()).state, AutoPayState.off);
+    });
+
+    test('no plan from the server reads as none, not as zero', () async {
+      ApiService.client = MockClient((_) async => _json(_ok({
+            'enabled': true,
+            'selectedInvoiceTypes': null,
+            'perChargeCap': null,
+          })));
+      final m = await AutoPay.status();
+      expect(m.invoiceTypes, isEmpty);
+      expect(m.perChargeCap, isNull);
     });
 
     test('a reply without `enabled` is off, never active', () async {
@@ -104,14 +138,33 @@ void main() {
       expect(start.url, 'https://stage-pay.boostconnect.biz?t=abc');
     });
 
-    test('Enable carries the monthly amount and every family member', () async {
+    test('Enable sends exactly the invoice types, the per-payment cap and the consent',
+        () async {
       Object? body;
       ApiService.client = MockClient((req) async {
         body = jsonDecode(req.body);
         return _json(_ok('https://stage-pay.boostconnect.biz?t=abc'));
       });
-      await AutoPay.setup(monthlyAmount: 170, studentIds: [11, 12]);
-      expect(body, {'monthlyAmount': 170, 'studentIds': [11, 12]});
+      await AutoPay.setup(
+          invoiceTypes: ['Monthly', 'Registration'],
+          perChargeCap: 170,
+          consentVersion: 'terms-v1');
+      // AutoPayEnableRequestViewModel takes no other field (additionalProperties: false).
+      expect(body, {
+        'invoiceTypes': ['Monthly', 'Registration'],
+        'perChargeCap': 170,
+        'consentVersion': 'terms-v1',
+      });
+    });
+
+    test('Enable leaves out what it was not given, rather than sending null', () async {
+      Object? body;
+      ApiService.client = MockClient((req) async {
+        body = jsonDecode(req.body);
+        return _json(_ok('https://stage-pay.boostconnect.biz?t=abc'));
+      });
+      await AutoPay.setup(perChargeCap: 50, consentVersion: 'terms-v1');
+      expect(body, {'perChargeCap': 50, 'consentVersion': 'terms-v1'});
     });
 
     test('no URL back is an error, never a blank page', () async {
@@ -166,5 +219,38 @@ void main() {
                 !e.toString().contains('not open yet'))));
       });
     }
+  });
+
+  group('the club\'s invoice types', () {
+    final session = UserSession.instance;
+    late Map<String, dynamic>? saved;
+    setUp(() => saved = session.authData);
+    tearDown(() => session.authData = saved);
+
+    test('come from the sign-in payload, in the club\'s order', () {
+      session.authData = {
+        'autoPayAllowedInvoiceTypes': ['Monthly', 'Registration']
+      };
+      expect(AutoPay.clubInvoiceTypes(), ['Monthly', 'Registration']);
+    });
+
+    test('blank, repeated and non-text entries are dropped', () {
+      session.authData = {
+        'autoPayAllowedInvoiceTypes': [' Monthly ', '', '  ', null, 7, 'Registration', 'Monthly']
+      };
+      expect(AutoPay.clubInvoiceTypes(), ['Monthly', 'Registration']);
+    });
+
+    test('anything but a list, or no session, is "the club sent none"', () {
+      for (final data in <Map<String, dynamic>?>[
+        null,
+        {},
+        {'autoPayAllowedInvoiceTypes': null},
+        {'autoPayAllowedInvoiceTypes': 'Monthly'},
+      ]) {
+        session.authData = data;
+        expect(AutoPay.clubInvoiceTypes(), isEmpty, reason: '$data');
+      }
+    });
   });
 }

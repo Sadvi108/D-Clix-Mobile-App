@@ -8,13 +8,19 @@ import 'package:http/testing.dart';
 import 'package:dclix_app/screens/autopay_screen.dart';
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/autopay.dart';
+import 'package:dclix_app/theme/ion.dart';
+import 'package:dclix_app/widgets/gradient_button.dart';
 
 typedef _Family = List<({int id, String name})>;
+
+/// What the club's sign-in payload allows Auto Pay to pay.
+const _clubTypes = ['Monthly', 'Registration'];
 
 Future<void> _open(
   WidgetTester t,
   Future<AutoPayMandate> Function() load, {
   _Family family = const [],
+  List<String> types = _clubTypes,
 }) async {
   // Tall enough that the whole list builds. Wider than a phone because the test font draws
   // every glyph a full em wide; real fonts fit 390 pt (see tool/capture_guide_shots.dart).
@@ -23,7 +29,10 @@ Future<void> _open(
   addTearDown(t.view.reset);
   await t.pumpWidget(MaterialApp(
       home: AutoPayScreen(
-          key: UniqueKey(), load: load, family: () async => family)));
+          key: UniqueKey(),
+          load: load,
+          family: () async => family,
+          clubTypes: () => types)));
   await t.pumpAndSettle();
 }
 
@@ -44,8 +53,32 @@ http.Response _ok() => http.Response('{"status":200,"meta":{"code":200},"data":n
 
 bool _switchOn(WidgetTester t) => t.widget<Switch>(find.byType(Switch)).value;
 
+/// Switch on, set a limit and continue past the setup sheet to the agreement.
+Future<void> _setUp(WidgetTester t) async {
+  await t.tap(find.byType(Switch));
+  await t.pumpAndSettle();
+  await t.enterText(find.byType(TextField), '170');
+  await t.tap(find.text('Continue'));
+  await t.pumpAndSettle();
+}
+
+/// Tick the agreement and leave for Boost.
+Future<void> _agree(WidgetTester t) async {
+  await t.tap(find.byIcon(Ion.squareOutline));
+  await t.pump();
+  await t.tap(find.text('Agree and continue to Boost'));
+  await t.pumpAndSettle();
+}
+
+GradientButton _agreeButton(WidgetTester t) => t.widget<GradientButton>(
+    find.widgetWithText(GradientButton, 'Agree and continue to Boost'));
+
 const _visa = AutoPayMandate(AutoPayState.active,
-    brand: 'Visa', last4: '4242', expiry: '08/28', monthlyAmount: 170);
+    brand: 'Visa',
+    last4: '4242',
+    expiry: '08/28',
+    invoiceTypes: ['Monthly', 'Registration'],
+    perChargeCap: 170);
 const _paused = AutoPayMandate(AutoPayState.paused, brand: 'Visa', last4: '4242');
 
 void main() {
@@ -58,7 +91,11 @@ void main() {
     await _open(t, () async => _visa);
     expect(find.text('Visa •••• 4242 is paying your invoices.'), findsOneWidget);
     expect(find.text('Expires 08/28'), findsOneWidget);
+    expect(find.text('Pays'), findsOneWidget);
+    expect(find.text('Monthly, Registration'), findsOneWidget);
+    expect(find.text('Limit per payment'), findsOneWidget);
     expect(find.text('RM 170.00'), findsOneWidget);
+    expect(find.text('Monthly amount'), findsNothing);
     expect(find.text('Pause'), findsOneWidget);
     expect(find.text('Disable'), findsOneWidget);
     expect(find.byType(Switch), findsNothing,
@@ -68,6 +105,8 @@ void main() {
     expect(find.text('PAUSED'), findsOneWidget);
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Pause'), findsNothing);
+    expect(find.text('Pays'), findsNothing, reason: 'the server reported no plan');
+    expect(find.text('Limit per payment'), findsNothing);
 
     await _open(
         t,
@@ -77,7 +116,8 @@ void main() {
     expect(find.text('Update card'), findsOneWidget);
   });
 
-  testWidgets('turning on asks the amount and shows the whole family is covered',
+  testWidgets(
+      'turning on asks for a limit, shows the family is covered, and agrees before Boost',
       (t) async {
     final calls = _serve(() => http.Response('', 404));
     await _open(t, () async => AutoPayMandate.off,
@@ -86,25 +126,198 @@ void main() {
     await t.tap(find.byType(Switch));
     await t.pumpAndSettle();
     expect(find.text('Set up Auto Pay'), findsOneWidget);
+    expect(find.text('LIMIT PER PAYMENT'), findsOneWidget);
+    expect(find.text('Auto Pay never takes more than this in one payment.'), findsOneWidget);
     expect(find.text('AISHA TAN'), findsOneWidget);
     expect(find.text('OMAR TAN'), findsOneWidget);
     expect(find.textContaining('covers everyone'), findsOneWidget);
 
-    // No amount yet: stays on the sheet and says what is missing.
-    await t.tap(find.text('Continue to Boost'));
+    // No limit yet: stays on the sheet and says what is missing.
+    await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
-    expect(find.text('Enter the amount to take each month.'), findsOneWidget);
-    expect(calls, isEmpty);
+    expect(find.text('Enter your limit per payment.'), findsOneWidget);
+    expect(find.text('Review and agree'), findsNothing);
 
     await t.enterText(find.byType(TextField), '170');
-    await t.tap(find.text('Continue to Boost'));
+    await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
+
+    // The agreement comes first, and says what is being agreed to.
+    expect(calls, isEmpty, reason: 'nothing is sent before the member agrees');
+    expect(find.text('Review and agree'), findsOneWidget);
+    expect(find.text('Pays: Monthly, Registration'), findsOneWidget);
+    expect(find.text('Up to RM 170.00 per payment'), findsOneWidget);
+    expect(find.text('Covers: AISHA TAN, OMAR TAN'), findsOneWidget);
+    expect(find.text('Card: saved on Boost\'s secure page'), findsOneWidget);
+    expect(find.text('Turn it off any time: Auto Pay → Disable'), findsOneWidget);
+
+    await _agree(t);
 
     expect(calls, hasLength(1));
     expect(calls.single.$1, '/AutoPay/Enable');
-    expect(calls.single.$2, {'monthlyAmount': 170, 'studentIds': [11, 12]});
+    expect(calls.single.$2, {
+      'invoiceTypes': ['Monthly', 'Registration'],
+      'perChargeCap': 170,
+      'consentVersion': kAutoPayTermsVersion,
+    });
+    expect(kAutoPayTermsVersion, 'recurring-terms-2026-10-02');
     expect(find.textContaining('not open yet'), findsOneWidget);
     expect(_switchOn(t), isFalse);
+  });
+
+  testWidgets('the club\'s invoice types start ticked, and only the ticked ones are sent',
+      (t) async {
+    final semantics = t.ensureSemantics();
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off);
+    await t.tap(find.byType(Switch));
+    await t.pumpAndSettle();
+
+    expect(find.text('INVOICES TO PAY'), findsOneWidget);
+    for (final type in _clubTypes) {
+      final node = t.getSemantics(find.text(type));
+      expect(
+          node,
+          isSemantics(
+              label: type, hasCheckedState: true, isChecked: true, hasTapAction: true),
+          reason: '$type is one checkbox to a screen reader, and starts ticked');
+      expect(node.rect.height, greaterThanOrEqualTo(48), reason: 'the whole row is the target');
+    }
+
+    await t.tap(find.text('Registration')); // anywhere on the row
+    await t.pump();
+    expect(t.getSemantics(find.text('Registration')),
+        isSemantics(label: 'Registration', hasCheckedState: true, isChecked: false));
+
+    await t.enterText(find.byType(TextField), '170');
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    expect(find.text('Pays: Monthly'), findsOneWidget);
+    await _agree(t);
+
+    expect(calls.single.$2, {
+      'invoiceTypes': ['Monthly'],
+      'perChargeCap': 170,
+      'consentVersion': kAutoPayTermsVersion,
+    });
+    semantics.dispose();
+  });
+
+  testWidgets('leaving out every invoice type stops at the sheet with a reason', (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off);
+    await t.tap(find.byType(Switch));
+    await t.pumpAndSettle();
+
+    await t.tap(find.text('Monthly'));
+    await t.tap(find.text('Registration'));
+    await t.enterText(find.byType(TextField), '170');
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+
+    expect(find.text('Choose at least one type of invoice.'), findsOneWidget);
+    expect(find.text('Review and agree'), findsNothing);
+    expect(calls, isEmpty);
+
+    // Ticking one again clears it.
+    await t.tap(find.text('Monthly'));
+    await t.pump();
+    expect(find.text('Choose at least one type of invoice.'), findsNothing);
+  });
+
+  testWidgets('a club that sent no invoice types is not asked about them', (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off, types: const []);
+    await t.tap(find.byType(Switch));
+    await t.pumpAndSettle();
+    expect(find.text('INVOICES TO PAY'), findsNothing);
+
+    await t.enterText(find.byType(TextField), '170');
+    await t.tap(find.text('Continue'));
+    await t.pumpAndSettle();
+    await _agree(t);
+
+    expect(calls.single.$2, {'perChargeCap': 170, 'consentVersion': kAutoPayTermsVersion},
+        reason: 'no invoiceTypes at all, rather than an empty list that pays nothing');
+  });
+
+  testWidgets('Agree waits for the box to be ticked', (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off);
+    await _setUp(t);
+
+    expect(_agreeButton(t).onPressed, isNull);
+    await t.tap(find.text('Agree and continue to Boost'));
+    await t.pumpAndSettle();
+    expect(find.text('Review and agree'), findsOneWidget);
+    expect(calls, isEmpty);
+
+    await t.tap(find.byIcon(Ion.squareOutline));
+    await t.pump();
+    expect(_agreeButton(t).onPressed, isNotNull);
+    await t.tap(find.byIcon(Ion.checkbox));
+    await t.pump();
+    expect(_agreeButton(t).onPressed, isNull, reason: 'unticking takes the agreement back');
+  });
+
+  testWidgets('the terms open from the agreement, without ticking it', (t) async {
+    _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off);
+    await _setUp(t);
+
+    await t.tapOnText(
+        find.textRange.ofSubstring('Recurring Billing Terms and Cancellation Policy'));
+    await t.pumpAndSettle();
+    for (final heading in [
+      'What gets charged',
+      'When you are charged',
+      'Checking your card',
+      'Receipts',
+      'Pausing and resuming',
+      'Cancelling',
+      'If a payment fails',
+      'Questions about a charge',
+    ]) {
+      expect(find.text(heading), findsOneWidget, reason: heading);
+    }
+
+    Navigator.of(t.element(find.text('Cancelling'))).pop();
+    await t.pumpAndSettle();
+    expect(find.text('Cancelling'), findsNothing);
+    expect(_agreeButton(t).onPressed, isNull,
+        reason: 'reading the terms is not agreeing to them');
+  });
+
+  testWidgets('backing out of the agreement sends nothing and leaves Auto Pay off',
+      (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off);
+    await _setUp(t);
+    expect(find.text('Review and agree'), findsOneWidget);
+
+    await t.tap(find.byIcon(Ion.chevronBack));
+    await t.pumpAndSettle();
+
+    expect(find.text('Review and agree'), findsNothing);
+    expect(calls, isEmpty);
+    expect(_switchOn(t), isFalse);
+  });
+
+  testWidgets('a new card is agreed to again, on the same plan', (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => _visa);
+
+    await t.tap(find.text('Visa •••• 4242'));
+    await t.pumpAndSettle();
+    expect(find.text('Review and agree'), findsOneWidget);
+    expect(calls, isEmpty);
+    await _agree(t);
+
+    expect(calls.single.$2, {
+      'invoiceTypes': ['Monthly', 'Registration'],
+      'perChargeCap': 170,
+      'consentVersion': kAutoPayTermsVersion,
+    });
   });
 
   testWidgets('a single-member account is not shown a family list', (t) async {
