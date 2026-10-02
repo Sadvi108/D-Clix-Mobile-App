@@ -253,4 +253,40 @@ void main() {
       }
     });
   });
+
+  group('invoice type choices', () {
+    tearDown(() => UserSession.instance.authData = null);
+
+    test('the club\'s own list wins, and nothing is fetched', () async {
+      var fetched = false;
+      ApiService.client = MockClient((_) async {
+        fetched = true;
+        return _json(_ok([]));
+      });
+      UserSession.instance.authData = {
+        'autoPayAllowedInvoiceTypes': ['Monthly', 'Registration']
+      };
+      expect(await AutoPay.invoiceTypeChoices(), ['Monthly', 'Registration']);
+      expect(fetched, isFalse);
+    });
+
+    test('a club that sent none offers every type the academy lists', () async {
+      ApiService.client = MockClient((req) async {
+        expect(req.url.path, '/Listing/InvoceTypes');
+        return _json(_ok([
+          {'id': 1, 'text': 'Monthly'},
+          {'id': 2, 'text': 'Grading'},
+          {'id': 3, 'text': ' '},
+        ]));
+      });
+      UserSession.instance.authData = {};
+      expect(await AutoPay.invoiceTypeChoices(), ['Monthly', 'Grading']);
+    });
+
+    test('a failed listing offers no choice rather than failing the setup', () async {
+      ApiService.client = MockClient((_) async => http.Response('', 500));
+      UserSession.instance.authData = {};
+      expect(await AutoPay.invoiceTypeChoices(), isEmpty);
+    });
+  });
 }

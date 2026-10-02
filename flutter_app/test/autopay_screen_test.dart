@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -32,7 +33,7 @@ Future<void> _open(
           key: UniqueKey(),
           load: load,
           family: () async => family,
-          clubTypes: () => types)));
+          clubTypes: () async => types)));
   await t.pumpAndSettle();
 }
 
@@ -93,7 +94,7 @@ void main() {
     expect(find.text('Expires 08/28'), findsOneWidget);
     expect(find.text('Pays'), findsOneWidget);
     expect(find.text('Monthly, Registration'), findsOneWidget);
-    expect(find.text('Limit per payment'), findsOneWidget);
+    expect(find.text('Limit per invoice'), findsOneWidget);
     expect(find.text('RM 170.00'), findsOneWidget);
     expect(find.text('Monthly amount'), findsNothing);
     expect(find.text('Pause'), findsOneWidget);
@@ -106,7 +107,7 @@ void main() {
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Pause'), findsNothing);
     expect(find.text('Pays'), findsNothing, reason: 'the server reported no plan');
-    expect(find.text('Limit per payment'), findsNothing);
+    expect(find.text('Limit per invoice'), findsNothing);
 
     await _open(
         t,
@@ -126,8 +127,8 @@ void main() {
     await t.tap(find.byType(Switch));
     await t.pumpAndSettle();
     expect(find.text('Set up Auto Pay'), findsOneWidget);
-    expect(find.text('LIMIT PER PAYMENT'), findsOneWidget);
-    expect(find.text('Auto Pay never takes more than this in one payment.'), findsOneWidget);
+    expect(find.text('LIMIT PER INVOICE'), findsOneWidget);
+    expect(find.text('Invoices above this amount are left for you to pay.'), findsOneWidget);
     expect(find.text('AISHA TAN'), findsOneWidget);
     expect(find.text('OMAR TAN'), findsOneWidget);
     expect(find.textContaining('covers everyone'), findsOneWidget);
@@ -135,7 +136,7 @@ void main() {
     // No limit yet: stays on the sheet and says what is missing.
     await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
-    expect(find.text('Enter your limit per payment.'), findsOneWidget);
+    expect(find.text('Enter your limit per invoice.'), findsOneWidget);
     expect(find.text('Review and agree'), findsNothing);
 
     await t.enterText(find.byType(TextField), '170');
@@ -146,7 +147,7 @@ void main() {
     expect(calls, isEmpty, reason: 'nothing is sent before the member agrees');
     expect(find.text('Review and agree'), findsOneWidget);
     expect(find.text('Pays: Monthly, Registration'), findsOneWidget);
-    expect(find.text('Up to RM 170.00 per payment'), findsOneWidget);
+    expect(find.text('Up to RM 170.00 per invoice'), findsOneWidget);
     expect(find.text('Covers: AISHA TAN, OMAR TAN'), findsOneWidget);
     expect(find.text('Card: saved on Boost\'s secure page'), findsOneWidget);
     expect(find.text('Turn it off any time: Auto Pay → Disable'), findsOneWidget);
@@ -160,7 +161,7 @@ void main() {
       'perChargeCap': 170,
       'consentVersion': kAutoPayTermsVersion,
     });
-    expect(kAutoPayTermsVersion, 'recurring-terms-2026-10-02');
+    expect(kAutoPayTermsVersion, 'recurring-terms-2026-10-02.2');
     expect(find.textContaining('not open yet'), findsOneWidget);
     expect(_switchOn(t), isFalse);
   });
@@ -392,4 +393,46 @@ void main() {
     expect(find.text('Card removed. Auto Pay is off.'), findsOneWidget);
     expect(_switchOn(t), isFalse);
   });
+
+  testWidgets('Continue waits for the invoice types to arrive', (t) async {
+    final types = Completer<List<String>>();
+    t.view.physicalSize = const Size(1800, 2800);
+    t.view.devicePixelRatio = 3;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(
+        home: AutoPayScreen(
+            load: () async => AutoPayMandate.off,
+            family: () async => const [],
+            clubTypes: () => types.future)));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(Switch));
+    // Not pumpAndSettle: the "loading types" spinner turns until they arrive.
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+
+    GradientButton cont() => t.widget<GradientButton>(
+        find.widgetWithText(GradientButton, 'Continue'));
+    expect(cont().onPressed, isNull, reason: 'the choice is not known yet');
+
+    types.complete(['Monthly', 'Grading']);
+    await t.pumpAndSettle();
+    expect(cont().onPressed, isNotNull);
+    expect(find.text('Grading'), findsOneWidget);
+  });
+
+  for (final (state, m) in [('off', AutoPayMandate.off), ('on', _visa)]) {
+    testWidgets('with Auto Pay $state, the terms and paying yourself are on the screen',
+        (t) async {
+      await _open(t, () async => m);
+      expect(find.text('Pay yourself any time'), findsOneWidget,
+          reason: 'manual payment works whether Auto Pay is on or off');
+
+      await t.ensureVisible(find.text('Recurring Billing Terms'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Recurring Billing Terms'));
+      await t.pumpAndSettle();
+      expect(find.text('What gets charged'), findsOneWidget);
+      expect(find.text('Paying yourself'), findsOneWidget);
+    });
+  }
 }

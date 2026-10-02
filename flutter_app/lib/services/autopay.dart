@@ -199,6 +199,21 @@ class AutoPay {
   /// sent none.
   static List<String> clubInvoiceTypes() =>
       _names(UserSession.instance.authData?['autoPayAllowedInvoiceTypes']);
+
+  /// The types a member may tick in the setup sheet. The club's own list when it sent one;
+  /// otherwise the club placed no limit, so every type the academy lists (the same
+  /// /Listing/InvoceTypes that Pay Your Dues filters by). A failed listing offers no choice,
+  /// and Enable then leaves the types to the server, rather than blocking the setup.
+  static Future<List<String>> invoiceTypeChoices() async {
+    final club = clubInvoiceTypes();
+    if (club.isNotEmpty) return club;
+    try {
+      final rows = await RnApi.invoiceTypes();
+      return _names([for (final r in rows) pickField(r, ['text', 'name'])]);
+    } catch (_) {
+      return const [];
+    }
+  }
 }
 
 /// A server list of names, trimmed, without blanks, repeats or anything not text. Anything
