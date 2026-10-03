@@ -12,13 +12,15 @@ enum PaymentResultKind { success, failed, cancelled, pending }
 
 /// What to tell the member once Boost's page closes. [gatewayStatus] is what the WebView
 /// popped: "success" or "failed" from /Payment/Completed/{Success|Failed}, "cancelled" when
-/// the member closed the page, null when the return carried no status.
+/// the member cancelled before paying, "closed" when they closed the page after reaching the
+/// bank, null when the return carried no status.
 ///
 /// When Boost said success but the server still lists the invoices as due, the answer is
 /// "processing", never "failed": that member has paid and must not be told to pay again.
 PaymentResultKind paymentResultKind(PaymentResult verdict, String? gatewayStatus) {
   if (verdict.outcome == PaymentOutcome.paid) return PaymentResultKind.success;
-  if (gatewayStatus == 'success') return PaymentResultKind.pending;
+  // Closed after reaching the bank: FPX can still settle it, so never "failed" or "cancelled".
+  if (gatewayStatus == 'success' || gatewayStatus == 'closed') return PaymentResultKind.pending;
   if (gatewayStatus == 'failed') return PaymentResultKind.failed;
   if (verdict.outcome == PaymentOutcome.unpaid) {
     return gatewayStatus == 'cancelled' ? PaymentResultKind.cancelled : PaymentResultKind.failed;

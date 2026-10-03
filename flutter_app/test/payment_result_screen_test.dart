@@ -30,6 +30,13 @@ void main() {
       expect(paymentResultKind(_unpaid, 'cancelled'), PaymentResultKind.cancelled);
     });
 
+    test('closed after reaching the bank: processing, the bank may still settle it', () {
+      // Live, 2026-10-03: FPX left Boost on "Processing…" and the member closed the page.
+      expect(paymentResultKind(_unpaid, 'closed'), PaymentResultKind.pending);
+      expect(paymentResultKind(_unknown, 'closed'), PaymentResultKind.pending);
+      expect(paymentResultKind(_paid, 'closed'), PaymentResultKind.success);
+    });
+
     test('nothing can be proved either way: processing', () {
       expect(paymentResultKind(_unknown, null), PaymentResultKind.pending);
       expect(paymentResultKind(_unknown, 'cancelled'), PaymentResultKind.pending);

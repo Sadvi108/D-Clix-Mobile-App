@@ -112,6 +112,10 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
   double _progress = 0;
   ({String? status, String? reference})? _gateway;
 
+  /// The member got past Boost's first page (to the bank, or to 3D Secure). Closing after that
+  /// is "closed": the bank may still settle the payment. Closing before it is "cancelled".
+  bool _leftCheckout = false;
+
   String get _reference => _gateway?.reference ?? widget.referenceId;
 
   /// Detect that the browser landed back on our return target. We don't
@@ -173,7 +177,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
         final abort = await _confirmAbort();
         if (abort && mounted) {
           Navigator.of(context).pop({
-            'status': 'cancelled',
+            'status': _leftCheckout ? 'closed' : 'cancelled',
             'verification': null,
             'referenceId': _reference,
           });
@@ -189,7 +193,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
               final abort = await _confirmAbort();
               if (abort && mounted) {
                 Navigator.of(context).pop({
-                  'status': 'cancelled',
+                  'status': _leftCheckout ? 'closed' : 'cancelled',
                   'verification': null,
                   'referenceId': _reference,
                 });
@@ -220,6 +224,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
                 shouldOverrideUrlLoading: (controller, action) async {
                   final url = action.request.url?.toString();
                   _gateway = BcpgWebViewScreen.finalizing(url) ?? _gateway;
+                  if (action.isForMainFrame && url != widget.paymentUrl) _leftCheckout = true;
                   if (_isReturnUrl(url)) {
                     // Don't actually navigate to the return URL — bounce
                     // back into the app and verify.
