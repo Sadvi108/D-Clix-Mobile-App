@@ -10,6 +10,7 @@ import '../widgets/report_kit.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 import 'payment/bcpg_webview_screen.dart';
+import 'payment/payment_result_screen.dart';
 
 /// Port of `frontend/app/purchase-request.tsx` (Expo v2.11.1).
 ///
@@ -74,7 +75,7 @@ class _PurchaseRequestScreenState extends State<PurchaseRequestScreen> with UseA
         purchaseItems: [for (final p in selected) buildPurchaseLine(p, _n(p.productId))],
       ));
       if (!mounted) return;
-      await BcpgWebViewScreen.open(context,
+      final back = await BcpgWebViewScreen.open(context,
           paymentUrl: start.url, referenceId: start.referenceId ?? '');
       final verdict = await BoostPayment.confirm(
         referenceId: start.referenceId,
@@ -83,11 +84,11 @@ class _PurchaseRequestScreenState extends State<PurchaseRequestScreen> with UseA
       );
       if (!mounted) return;
       final paid = verdict.outcome == PaymentOutcome.paid;
-      await notify(
-        context,
-        paid ? 'Purchase confirmed' : 'Purchase',
-        paid ? '${selected.length} item(s) · RM ${money2(total)}. Your academy will process the order.' : verdict.message,
-      );
+      await PaymentResultScreen.show(context,
+          kind: paymentResultKind(verdict, back?['status'] as String?),
+          amount: total,
+          paidFor: selected.length == 1 ? '1 item' : '${selected.length} items',
+          reference: back?['referenceId'] as String?);
       if (paid) {
         for (final ctrl in _qty.values) {
           ctrl.clear();

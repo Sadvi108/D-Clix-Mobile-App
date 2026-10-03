@@ -11,6 +11,7 @@ import '../widgets/report_kit.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 import 'payment/bcpg_webview_screen.dart';
+import 'payment/payment_result_screen.dart';
 
 int _intOf(dynamic v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
 
@@ -61,12 +62,15 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
       return;
     }
     final ids = _selected.toList();
+    final amount = (_inv.data ?? const <Map<String, dynamic>>[])
+        .where((r) => _selected.contains(_intOf(r['invoiceId'])))
+        .fold<num>(0, (s, r) => s + RnApi.number(r['dueAmount']));
     setState(() => _paying = true);
     UserSession.instance.startPaymentLock();
     try {
       final start = await BoostPayment.start(PaymentIntent(invoiceIds: ids));
       if (!mounted) return;
-      await BcpgWebViewScreen.open(context,
+      final back = await BcpgWebViewScreen.open(context,
           paymentUrl: start.url, referenceId: start.referenceId ?? '');
       // The browser never reports the result — verify by reference, then reconcile the list.
       final verdict = await BoostPayment.confirm(
@@ -76,8 +80,16 @@ class _OutstandingInvoicesScreenState extends State<OutstandingInvoicesScreen>
       );
       _inv.reload();
       if (!mounted) return;
-      setState(() => _selected.clear());
-      await notify(context, verdict.outcome == PaymentOutcome.paid ? 'Payment received' : 'Payment', verdict.message);
+      final kind = paymentResultKind(verdict, back?['status'] as String?);
+      // Unpaid invoices stay ticked, so "Try again" is one tap.
+      if (kind != PaymentResultKind.failed && kind != PaymentResultKind.cancelled) {
+        setState(() => _selected.clear());
+      }
+      await PaymentResultScreen.show(context,
+          kind: kind,
+          amount: amount.toDouble(),
+          paidFor: ids.length == 1 ? '1 invoice' : '${ids.length} invoices',
+          reference: back?['referenceId'] as String?);
     } catch (e) {
       if (mounted) await notify(context, 'Payment failed', friendlyError(e));
     } finally {

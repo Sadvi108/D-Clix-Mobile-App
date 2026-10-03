@@ -25,6 +25,7 @@ import '../utils/progress_stats.dart';
 import '../widgets/rn_kit.dart';
 import '../widgets/use_api.dart';
 import 'payment/bcpg_webview_screen.dart';
+import 'payment/payment_result_screen.dart';
 
 /// Advance-payment selection carried into the pay sheet (`TermPayContext` in payments.tsx).
 class TermPayContext {
@@ -243,11 +244,14 @@ class _PaymentsScreenState extends State<PaymentsScreen>
               'The online gateway creates one student payment at a time. Choose Direct Bank-In to submit one receipt for these siblings together.');
           return false;
         }
+        // Read before _afterPaid empties the cart. Months not invoiced yet are priced by the
+        // gateway, so an estimated term has no sure total.
+        final amount = term == null ? _cartTotal : (term.estimated ? null : term.total);
         // One gateway session for everything selected; the term bills un-invoiced advance months too.
         final start = await _startPayment(payingIds, term);
         if (!mounted) return true;
         Navigator.of(context).pop(); // close the sheet before the gateway opens
-        await BcpgWebViewScreen.open(context,
+        final back = await BcpgWebViewScreen.open(context,
             paymentUrl: start.url, referenceId: start.referenceId ?? '');
         if (!mounted) return false;
         // The browser never says whether the payment went through: verify, then reconcile
@@ -270,7 +274,14 @@ class _PaymentsScreenState extends State<PaymentsScreen>
         }
         _afterPaid(term);
         if (mounted) {
-          await notify(context, verdict.outcome == PaymentOutcome.paid ? 'Payment received' : 'Payment', verdict.message);
+          final months = term?.months.length ?? 0;
+          await PaymentResultScreen.show(context,
+              kind: paymentResultKind(verdict, back?['status'] as String?),
+              amount: amount?.toDouble(),
+              paidFor: term == null
+                  ? (payingIds.length == 1 ? '1 invoice' : '${payingIds.length} invoices')
+                  : (months == 1 ? '1 month' : '$months months'),
+              reference: back?['referenceId'] as String?);
         }
         return false;
       }

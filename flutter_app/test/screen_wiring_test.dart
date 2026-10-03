@@ -66,6 +66,7 @@ const _noDataNeeded = {
   'instructor_reports_screen', // a menu of report routes
   'user_guide_screen', // static content, deliberately offline
   'bcpg_webview_screen', // drives a WebView, not the API
+  'payment_result_screen', // shows the outcome its caller already verified
 };
 
 /// The contract each screen is expected to keep. Names are Api method names.

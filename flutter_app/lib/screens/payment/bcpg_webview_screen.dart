@@ -54,17 +54,17 @@ class BcpgWebViewScreen extends StatefulWidget {
     ));
   }
 
+  static bool _ours(Uri uri) =>
+      ['http', 'https'].contains(uri.scheme) &&
+      [Uri.parse(ApiService.baseUrl).host, Uri.parse(ApiService.boostBaseUrl).host]
+          .contains(uri.host);
+
   static bool isMerchantReturn(String? url,
       {String legacyPath = 'bcpg_redirect'}) {
     final uri = Uri.tryParse(url ?? '');
     if (uri == null) return false;
     if (uri.scheme == 'dclix' && uri.host == 'bcpg-return') return true;
-    final allowedHosts = [
-      Uri.parse(ApiService.baseUrl).host,
-      Uri.parse(ApiService.boostBaseUrl).host
-    ];
-    if (!['http', 'https'].contains(uri.scheme) ||
-        !allowedHosts.contains(uri.host)) return false;
+    if (!_ours(uri)) return false;
     final path = uri.path.toLowerCase().replaceFirst(RegExp(r'/+$'), '');
     // Boost first sends the browser to a server Finalizing page (/Payment/Finalizing for
     // invoices, /AutoPay/Finalizing for a saved card). That page records the result, so it
@@ -87,6 +87,21 @@ class BcpgWebViewScreen extends StatefulWidget {
     return segments[i + 1].toLowerCase();
   }
 
+  /// What Boost told the server's Finalizing page: `status` (authorized, canceled, failed…)
+  /// and Boost's own `referenceId`, the one its page showed the member. Null for any other URL.
+  static ({String? status, String? reference})? finalizing(String? url) {
+    final uri = Uri.tryParse(url ?? '');
+    if (uri == null || !_ours(uri) || !uri.path.toLowerCase().endsWith('/finalizing')) {
+      return null;
+    }
+    String? q(String key) {
+      final v = uri.queryParameters[key]?.trim();
+      return v == null || v.isEmpty ? null : v;
+    }
+
+    return (status: q('status')?.toLowerCase(), reference: q('referenceId'));
+  }
+
   @override
   State<BcpgWebViewScreen> createState() => _BcpgWebViewScreenState();
 }
@@ -95,6 +110,9 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
   bool _verifying = false;
   bool _returned = false;
   double _progress = 0;
+  ({String? status, String? reference})? _gateway;
+
+  String get _reference => _gateway?.reference ?? widget.referenceId;
 
   /// Detect that the browser landed back on our return target. We don't
   /// trust the BCPG status param — always re-verify via the API.
@@ -114,10 +132,14 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
     _returned = true;
     if (!mounted) return;
     setState(() => _verifying = true);
+    final said = _gateway?.status;
     Navigator.of(context).pop({
       'returned': true,
-      'referenceId': widget.referenceId,
-      'status': BcpgWebViewScreen.returnStatus(url),
+      'referenceId': _reference,
+      // Boost's own Cancel button also ends on Completed/Failed; only Finalizing tells them apart.
+      'status': said == 'canceled' || said == 'cancelled'
+          ? 'cancelled'
+          : BcpgWebViewScreen.returnStatus(url),
     });
   }
 
@@ -153,7 +175,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
           Navigator.of(context).pop({
             'status': 'cancelled',
             'verification': null,
-            'referenceId': widget.referenceId,
+            'referenceId': _reference,
           });
         }
       },
@@ -169,7 +191,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
                 Navigator.of(context).pop({
                   'status': 'cancelled',
                   'verification': null,
-                  'referenceId': widget.referenceId,
+                  'referenceId': _reference,
                 });
               }
             },
@@ -197,6 +219,7 @@ class _BcpgWebViewScreenState extends State<BcpgWebViewScreen> {
                     setState(() => _progress = p / 100.0),
                 shouldOverrideUrlLoading: (controller, action) async {
                   final url = action.request.url?.toString();
+                  _gateway = BcpgWebViewScreen.finalizing(url) ?? _gateway;
                   if (_isReturnUrl(url)) {
                     // Don't actually navigate to the return URL — bounce
                     // back into the app and verify.

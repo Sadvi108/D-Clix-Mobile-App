@@ -149,6 +149,21 @@ void main() {
       expect(BcpgWebViewScreen.returnStatus(null), isNull);
     });
 
+    test('reads Boost\'s status and reference off the Finalizing page', () {
+      // Live, 2026-10-03: Boost's Cancel button on the FPX page.
+      expect(
+          BcpgWebViewScreen.finalizing('${ApiService.boostBaseUrl}/Payment/Finalizing?uuid=687a'
+              '&referenceId=MOB6820261003224417393&amount=85.00&status=canceled&signature=Qk'),
+          (status: 'canceled', reference: 'MOB6820261003224417393'));
+      expect(
+          BcpgWebViewScreen.finalizing(
+              '${ApiService.boostBaseUrl}/AutoPay/Finalizing?referenceId=AUTOPAY1&status=authorized&errorDesc'),
+          (status: 'authorized', reference: 'AUTOPAY1'));
+      expect(BcpgWebViewScreen.finalizing('${ApiService.boostBaseUrl}/Payment/Completed/Failed'), isNull);
+      expect(BcpgWebViewScreen.finalizing('https://unrelated.example/Payment/Finalizing?status=paid'),
+          isNull);
+    });
+
     test('still recognises the Bcpg return, and nothing off-host', () {
       expect(BcpgWebViewScreen.isMerchantReturn('${ApiService.boostBaseUrl}/Bcpg/Redirect?status=paid'), isTrue);
       expect(BcpgWebViewScreen.isMerchantReturn('https://unrelated.example/Payment/Completed/Success'), isFalse);
