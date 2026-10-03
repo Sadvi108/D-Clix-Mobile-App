@@ -1,6 +1,14 @@
 # Instructor manual attendance — findings and plan
 
-Status: **blocked on the backend**, one untested client-side path left. 15 September 2026.
+Status: **shipped, 3 October 2026.** The backend deployed its own contract on UAT (not
+production): `GET /Attendance/Centres`, `GET /Attendance/TrainingTimes?centreId&date`,
+`GET /Attendance/People?type&centreId&timeId&date` → `{id, name, alreadyMarked}` and
+`POST /Attendance/ManualAdd {type, centreId, timeId, date, personIds}` → `{added,
+alreadyMarkedIds}`. The app's Manual Attendance screen (instructor Quick Access) follows the
+portal's Mark Attendance page and sends these routes to the UAT host. `type` is sent as
+`Student` / `Instructor` (the portal labels), still to be confirmed against a live
+instructor account. The proposed `/Attendance/MarkByInstructor` register below never shipped
+and was removed from Class Check-In. The rest of this file is the September history.
 
 ## Request
 

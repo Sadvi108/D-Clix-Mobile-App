@@ -36,6 +36,7 @@ import '../screens/debug_screen.dart';
 import '../screens/outstanding_invoices_screen.dart';
 import '../screens/instructor_tabs_shell.dart';
 import '../screens/instructor_attendance_screen.dart';
+import '../screens/manual_attendance_screen.dart';
 import '../screens/instructor_home_screen.dart';
 import '../screens/instructor_collections_screen.dart';
 import '../screens/instructor_reports_screen.dart';
@@ -287,6 +288,10 @@ final GoRouter appRouter = GoRouter(
         path: '/instructor/attendance',
         pageBuilder: (_, s) =>
             _fadeThrough(s.pageKey, const InstructorAttendanceScreen())),
+    GoRoute(
+        path: '/instructor/manual-attendance',
+        pageBuilder: (_, s) =>
+            _fadeThrough(s.pageKey, const ManualAttendanceScreen())),
     GoRoute(
       path: '/instructor/qr-scan',
       pageBuilder: (_, state) => MaterialPage(

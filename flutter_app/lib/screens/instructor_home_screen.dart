@@ -27,6 +27,14 @@ const List<_Tile> _tiles = [
     color: PremiumTint.indigo,
     group: _classes
   ),
+  // Marks a class for someone who missed it (the portal's Mark Attendance).
+  (
+    id: 'manual-attendance',
+    label: 'Manual Attendance',
+    icon: Ion.createOutline,
+    color: PremiumTint.sky,
+    group: _classes
+  ),
   (id: 'training-time', label: 'Training Time', icon: Ion.timeOutline, color: PremiumTint.amber, group: _classes),
   (id: 'new-student', label: 'New Student', icon: Ion.personAddOutline, color: PremiumTint.green, group: _classes),
   (
@@ -70,6 +78,7 @@ const Map<String, String> _tileRoutes = {
   'training-time': '/instructor/reports/training-time',
   'activities': '/instructor/reports/activity',
   'update-attendance': '/instructor/attendance',
+  'manual-attendance': '/instructor/manual-attendance',
   'receipt': '/instructor/reports/receipt',
   'grading-schedule': '/instructor/reports/grading-schedule',
   'tournament-summary': '/instructor/reports/tournament-summary',

@@ -163,15 +163,11 @@ void main() {
       '/Account/ApproveStudent',
       '/Account/RejectStudent'
     };
-    // Manual attendance reads the route table itself and only calls its proposed route once
-    // the server lists it (docs/specs/2026-09-15-manual-attendance.md).
-    const manualAttendance = {'/swagger/v1/swagger.json', '/Attendance/MarkByInstructor'};
     final missing = calls
         .where((c) =>
             resolve(c.path, routes.keys) == null &&
             !(c.file == 'online_submissions.dart' &&
-                proposed.contains(normalise(c.path))) &&
-            !(c.file == 'manual_attendance.dart' && manualAttendance.contains(normalise(c.path))))
+                proposed.contains(normalise(c.path))))
         .toList();
     expect(missing, isEmpty,
         reason:
@@ -194,13 +190,15 @@ void main() {
     expect(wrong, isEmpty, reason: wrong.join('\n'));
   });
 
-  test('only the Boost routes are sent to the other host', () {
-    // /Bcpg and /AutoPay are not deployed to production and are routed to UAT instead. If any
-    // other path ever started matching isBoostPath, ordinary traffic would silently cross hosts.
+  test('only the UAT-only routes are sent to the other host', () {
+    // /Bcpg, /AutoPay and manual attendance are not deployed to production and are routed to
+    // UAT instead. If any other path ever started matching isBoostPath, ordinary traffic would
+    // silently cross hosts.
     final boost = calls.where((c) => ApiService.isBoostPath(c.path)).toList();
     expect(boost, isNotEmpty, reason: 'the Boost calls disappeared');
-    expect(boost.map((c) => c.file).toSet(), {'boost_payment.dart', 'autopay.dart'},
-        reason: 'Boost calls should stay in the two Boost services');
+    expect(boost.map((c) => c.file).toSet(), {'boost_payment.dart', 'autopay.dart', 'manual_attendance.dart'},
+        reason: 'UAT calls should stay in their three services');
+    expect(ApiService.isBoostPath('/Attendance/Add'), isFalse, reason: 'QR check-in is live on production');
   });
 
   test('reports which server routes the app never calls', () {

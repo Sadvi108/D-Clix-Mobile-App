@@ -70,9 +70,19 @@ oc7SE4JsHh9TCt6Jpz8CJH9n9pkswfW/hDZKyFYmU2EYLss=
     return host == Uri.parse(boostBaseUrl).host && body(pem) == body(boostCertPem);
   }
 
-  /// Routes only the UAT deployment serves: the Boost payment routes and Auto Pay's saved card.
+  /// Routes only the UAT deployment serves: the Boost payment routes, Auto Pay's saved card
+  /// and instructor manual attendance. `/Attendance/Add` (QR check-in) stays on production.
   static bool isBoostPath(String endpoint) =>
-      endpoint.startsWith('/Bcpg/') || endpoint.startsWith('/AutoPay/');
+      endpoint.startsWith('/Bcpg/') ||
+      endpoint.startsWith('/AutoPay/') ||
+      _uatAttendance.contains(endpoint.split('?').first);
+
+  static const _uatAttendance = {
+    '/Attendance/Centres',
+    '/Attendance/TrainingTimes',
+    '/Attendance/People',
+    '/Attendance/ManualAdd',
+  };
 
   /// Web preview only: the local CORS proxy (port 8082). Browsers cannot call Club.Api
   /// directly — it 401s CORS preflight on authenticated routes. Native builds ignore this.
