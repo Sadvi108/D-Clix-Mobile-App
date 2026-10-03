@@ -111,7 +111,7 @@ void main() {
     expect(find.text('Expires 08/28'), findsOneWidget);
     expect(find.text('Pays'), findsOneWidget);
     expect(find.text('Monthly, Registration'), findsOneWidget);
-    expect(find.text('Limit per invoice'), findsOneWidget);
+    expect(find.text('Limit per transaction'), findsOneWidget);
     expect(find.text('RM 170.00'), findsOneWidget);
     expect(find.text('Monthly amount'), findsNothing);
     expect(find.text('Pause'), findsOneWidget);
@@ -124,7 +124,7 @@ void main() {
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Pause'), findsNothing);
     expect(find.text('Pays'), findsNothing, reason: 'the server reported no plan');
-    expect(find.text('Limit per invoice'), findsNothing);
+    expect(find.text('Limit per transaction'), findsNothing);
 
     await _open(
         t,
@@ -144,8 +144,8 @@ void main() {
     await t.tap(find.byType(Switch));
     await t.pumpAndSettle();
     expect(find.text('Set up Auto Pay'), findsOneWidget);
-    expect(find.text('LIMIT PER INVOICE'), findsOneWidget);
-    expect(find.text('Invoices above this amount are left for you to pay.'), findsOneWidget);
+    expect(find.text('LIMIT PER TRANSACTION'), findsOneWidget);
+    expect(find.text('Auto Pay never takes more than this in one payment.'), findsOneWidget);
     expect(find.text('AISHA TAN'), findsOneWidget);
     expect(find.text('OMAR TAN'), findsOneWidget);
     expect(find.textContaining('covers everyone'), findsOneWidget);
@@ -153,7 +153,7 @@ void main() {
     // No limit yet: stays on the sheet and says what is missing.
     await t.tap(find.text('Continue'));
     await t.pumpAndSettle();
-    expect(find.text('Enter your limit per invoice.'), findsOneWidget);
+    expect(find.text('Enter your limit per transaction.'), findsOneWidget);
     expect(find.text('Review and agree'), findsNothing);
 
     await t.enterText(find.byType(TextField), '170');
@@ -164,7 +164,7 @@ void main() {
     expect(calls, isEmpty, reason: 'nothing is sent before the member agrees');
     expect(find.text('Review and agree'), findsOneWidget);
     expect(find.text('Pays: Monthly, Registration'), findsOneWidget);
-    expect(find.text('Up to RM 170.00 per invoice'), findsOneWidget);
+    expect(find.text('Up to RM 170.00 per transaction'), findsOneWidget);
     expect(find.text('Covers: AISHA TAN, OMAR TAN'), findsOneWidget);
     expect(find.text('Card: saved on Boost\'s secure page'), findsOneWidget);
     expect(find.text('Turn it off any time: Auto Pay → Disable'), findsOneWidget);

@@ -209,7 +209,7 @@ class AutoPay {
     }
   }
 
-  /// Change the invoice types or the limit per invoice while Auto Pay is on. The card stays.
+  /// Change the invoice types or the limit per transaction while Auto Pay is on. The card stays.
   static Future<void> updateSettings({List<String>? invoiceTypes, double? perChargeCap}) =>
       ApiService.post('/AutoPay/UpdateSettings', {
         if (invoiceTypes != null) 'invoiceTypes': invoiceTypes,

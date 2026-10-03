@@ -18,7 +18,7 @@ import 'payment/bcpg_webview_screen.dart';
 /// from it.
 ///
 /// Off: one switch. Turning it on asks which of the club's invoice types to pay and a limit
-/// per invoice (and shows a parent that the whole family is covered), then the member agrees
+/// per transaction (and shows a parent that the whole family is covered), then the member agrees
 /// to the recurring billing terms, then Boost's save-card page takes over. The app never
 /// sees the card number. On: Pause / Resume and Disable replace the switch, because those
 /// are three states of one lifecycle, not an on/off setting. See [AutoPay] for the contract.
@@ -343,7 +343,7 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
               icon: Ion.walletOutline,
               tint: PremiumTint.green,
               title: 'Choose what it pays',
-              subtitle: 'Invoice types and a limit per invoice',
+              subtitle: 'Invoice types and a limit per transaction',
             ),
             PremiumRow(
               icon: Ion.cardOutline,
@@ -382,14 +382,14 @@ class _AutoPayScreenState extends State<AutoPayScreen> {
               PremiumRow(
                 icon: Ion.walletOutline,
                 tint: PremiumTint.green,
-                title: 'Limit per invoice',
+                title: 'Limit per transaction',
                 subtitle: 'RM ${_m.perChargeCap!.toStringAsFixed(2)}',
               ),
             PremiumRow(
               icon: Ion.createOutline,
               tint: PremiumTint.indigo,
               title: 'Change what it pays',
-              subtitle: 'Invoice types and limit per invoice',
+              subtitle: 'Invoice types and limit per transaction',
               onTap: _busy ? null : _editPlan,
             ),
             if (_family.length > 1)
@@ -715,7 +715,7 @@ class _SetupSheetState extends State<_SetupSheet> {
     final noCap = cap == null || cap <= 0;
     final noTypes = types.isNotEmpty && _picked.isEmpty;
     setState(() {
-      _error = noCap ? 'Enter your limit per invoice.' : null;
+      _error = noCap ? 'Enter your limit per transaction.' : null;
       _typesError = noTypes ? 'Choose at least one type of invoice.' : null;
     });
     if (noCap || noTypes) return;
@@ -753,7 +753,7 @@ class _SetupSheetState extends State<_SetupSheet> {
                     style: TextStyle(fontSize: 13, color: c.textSecondary)),
               ]),
             ),
-            const SectionLabel('Limit per invoice', padding: labelPad),
+            const SectionLabel('Limit per transaction', padding: labelPad),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gaps.xl),
               child: TextField(
@@ -779,7 +779,7 @@ class _SetupSheetState extends State<_SetupSheet> {
                   ),
                   prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
                   hintText: '0.00',
-                  helperText: 'Invoices above this amount are left for you to pay.',
+                  helperText: 'Auto Pay never takes more than this in one payment.',
                   errorText: _error,
                   filled: true,
                   fillColor: c.surface,
@@ -907,15 +907,15 @@ class _CheckRow extends StatelessWidget {
 
 /// Which text of the recurring billing terms a member agreed to. Enable sends it so the
 /// server records it: change it whenever [_terms] changes.
-const kAutoPayTermsVersion = 'recurring-terms-2026-10-02.2';
+const kAutoPayTermsVersion = 'recurring-terms-2026-10-03';
 
 /// The Recurring Billing Terms and Cancellation Policy, in plain words. Only what the app
 /// and the club actually do: no refund timelines or fees the club has not stated.
 const _terms = [
   (
     'What gets charged',
-    'Only invoices of the types you chose, for everyone Auto Pay covers, and only an invoice '
-        'of your limit per invoice or less. Anything Auto Pay does not pay stays in Fees Due.'
+    'Only invoices of the types you chose, for everyone Auto Pay covers, and never more than '
+        'your limit per transaction in one payment. Anything Auto Pay does not pay stays in Fees Due.'
   ),
   (
     'When you are charged',
@@ -1083,7 +1083,7 @@ class _ConsentPageState extends State<_ConsentPage> {
                   icon: Ion.walletOutline,
                   tint: PremiumTint.green,
                   titleLines: 3,
-                  title: 'Up to RM ${cap.toStringAsFixed(2)} per invoice',
+                  title: 'Up to RM ${cap.toStringAsFixed(2)} per transaction',
                 ),
               if (widget.family.length > 1)
                 PremiumRow(
