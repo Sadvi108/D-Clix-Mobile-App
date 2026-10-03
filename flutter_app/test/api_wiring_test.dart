@@ -3,7 +3,7 @@
 // This is a STATIC audit: it scans every .dart file under lib/, pulls out each
 // `ApiService.<verb>('<path>')` call, and checks path and verb against
 // test/fixtures/club_api_routes.json — the route table taken from the live UAT swagger
-// (80 paths, fetched 2026-10-02).
+// (92 paths, fetched 2026-10-03).
 //
 // It catches the failure mode no amount of Dart type-checking can: a path typo, a renamed
 // route, or a GET against a POST-only endpoint. Those compile perfectly and fail only
@@ -127,7 +127,7 @@ void main() {
     expect(calls.length, greaterThan(60),
         reason:
             'only found ${calls.length} calls — the parser is probably broken');
-    expect(routes.length, 80);
+    expect(routes.length, 92);
     expect(calls.map((c) => c.file).toSet(), contains('boost_payment.dart'));
   });
 

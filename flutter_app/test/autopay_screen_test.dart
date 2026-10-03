@@ -17,12 +17,22 @@ typedef _Family = List<({int id, String name})>;
 /// What the club's sign-in payload allows Auto Pay to pay.
 const _clubTypes = ['Monthly', 'Registration'];
 
+/// What /AutoPay/ConsentContent gives: one box, a version, no terms page.
+const _consent = AutoPayConsent(version: 'consent-v7', checkboxes: [
+  (key: 'cardholder', text: 'I am the cardholder or an authorised account user.'),
+]);
+
+/// Terms pages the screen asked to open.
+final _opened = <Uri>[];
+
 Future<void> _open(
   WidgetTester t,
   Future<AutoPayMandate> Function() load, {
   _Family family = const [],
   List<String> types = _clubTypes,
+  Future<AutoPayConsent> Function()? consent,
 }) async {
+  _opened.clear();
   // Tall enough that the whole list builds. Wider than a phone because the test font draws
   // every glyph a full em wide; real fonts fit 390 pt (see tool/capture_guide_shots.dart).
   t.view.physicalSize = const Size(1800, 2800);
@@ -33,7 +43,12 @@ Future<void> _open(
           key: UniqueKey(),
           load: load,
           family: () async => family,
-          clubTypes: () async => types)));
+          clubTypes: () async => types,
+          consent: consent ?? () async => _consent,
+          openUrl: (u) async {
+            _opened.add(u);
+            return true;
+          })));
   await t.pumpAndSettle();
 }
 
@@ -63,16 +78,18 @@ Future<void> _setUp(WidgetTester t) async {
   await t.pumpAndSettle();
 }
 
-/// Tick the agreement and leave for Boost.
+/// Tick every box of the agreement and leave for Boost.
 Future<void> _agree(WidgetTester t) async {
-  await t.tap(find.byIcon(Ion.squareOutline));
-  await t.pump();
-  await t.tap(find.text('Agree and continue to Boost'));
+  while (find.byIcon(Ion.squareOutline).evaluate().isNotEmpty) {
+    await t.tap(find.byIcon(Ion.squareOutline).first);
+    await t.pump();
+  }
+  await t.tap(find.text('Subscribe'));
   await t.pumpAndSettle();
 }
 
 GradientButton _agreeButton(WidgetTester t) => t.widget<GradientButton>(
-    find.widgetWithText(GradientButton, 'Agree and continue to Boost'));
+    find.widgetWithText(GradientButton, 'Subscribe'));
 
 const _visa = AutoPayMandate(AutoPayState.active,
     brand: 'Visa',
@@ -159,9 +176,8 @@ void main() {
     expect(calls.single.$2, {
       'invoiceTypes': ['Monthly', 'Registration'],
       'perChargeCap': 170,
-      'consentVersion': kAutoPayTermsVersion,
+      'consentVersion': 'consent-v7',
     });
-    expect(kAutoPayTermsVersion, 'recurring-terms-2026-10-02.2');
     expect(find.textContaining('not open yet'), findsOneWidget);
     expect(_switchOn(t), isFalse);
   });
@@ -199,7 +215,7 @@ void main() {
     expect(calls.single.$2, {
       'invoiceTypes': ['Monthly'],
       'perChargeCap': 170,
-      'consentVersion': kAutoPayTermsVersion,
+      'consentVersion': 'consent-v7',
     });
     semantics.dispose();
   });
@@ -238,7 +254,7 @@ void main() {
     await t.pumpAndSettle();
     await _agree(t);
 
-    expect(calls.single.$2, {'perChargeCap': 170, 'consentVersion': kAutoPayTermsVersion},
+    expect(calls.single.$2, {'perChargeCap': 170, 'consentVersion': 'consent-v7'},
         reason: 'no invoiceTypes at all, rather than an empty list that pays nothing');
   });
 
@@ -248,7 +264,7 @@ void main() {
     await _setUp(t);
 
     expect(_agreeButton(t).onPressed, isNull);
-    await t.tap(find.text('Agree and continue to Boost'));
+    await t.tap(find.text('Subscribe'));
     await t.pumpAndSettle();
     expect(find.text('Review and agree'), findsOneWidget);
     expect(calls, isEmpty);
@@ -266,8 +282,7 @@ void main() {
     await _open(t, () async => AutoPayMandate.off);
     await _setUp(t);
 
-    await t.tapOnText(
-        find.textRange.ofSubstring('Recurring Billing Terms and Cancellation Policy'));
+    await t.tap(find.text('Read the Recurring Billing Terms and Cancellation Policy'));
     await t.pumpAndSettle();
     for (final heading in [
       'What gets charged',
@@ -317,7 +332,7 @@ void main() {
     expect(calls.single.$2, {
       'invoiceTypes': ['Monthly', 'Registration'],
       'perChargeCap': 170,
-      'consentVersion': kAutoPayTermsVersion,
+      'consentVersion': 'consent-v7',
     });
   });
 
@@ -424,6 +439,7 @@ void main() {
     testWidgets('with Auto Pay $state, the terms and paying yourself are on the screen',
         (t) async {
       await _open(t, () async => m);
+      await t.scrollUntilVisible(find.text('Recurring Billing Terms'), 200);
       expect(find.text('Pay yourself any time'), findsOneWidget,
           reason: 'manual payment works whether Auto Pay is on or off');
 
@@ -435,4 +451,89 @@ void main() {
       expect(find.text('Paying yourself'), findsOneWidget);
     });
   }
+
+  testWidgets('every box the server words must be ticked before Agree', (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off,
+        consent: () async => const AutoPayConsent(version: 'v2', checkboxes: [
+              (key: 'cardholder', text: 'I am the cardholder.'),
+              (key: 'recurring', text: 'I agree to recurring billing.'),
+            ]));
+    await _setUp(t);
+    expect(find.text('I am the cardholder.'), findsOneWidget);
+    expect(find.text('I agree to recurring billing.'), findsOneWidget);
+
+    await t.tap(find.text('I am the cardholder.'));
+    await t.pump();
+    expect(_agreeButton(t).onPressed, isNull, reason: 'one box is still open');
+
+    await t.tap(find.text('I agree to recurring billing.'));
+    await t.pump();
+    await t.tap(find.text('Subscribe'));
+    await t.pumpAndSettle();
+    expect((calls.single.$2 as Map)['consentVersion'], 'v2',
+        reason: 'the server records which wording was agreed to');
+  });
+
+  testWidgets('an agreement that will not load sends nothing, and can be retried',
+      (t) async {
+    final calls = _serve(() => http.Response('', 404));
+    var tries = 0;
+    await _open(t, () async => AutoPayMandate.off, consent: () async {
+      if (tries++ == 0) throw Exception('offline');
+      return _consent;
+    });
+    await _setUp(t);
+    expect(find.text('Subscribe'), findsNothing);
+    expect(calls, isEmpty);
+
+    await t.tap(find.text('Try again'));
+    await t.pumpAndSettle();
+    expect(find.text('I am the cardholder or an authorised account user.'), findsOneWidget);
+  });
+
+  testWidgets('the club\'s terms page opens in the app when the server gives one',
+      (t) async {
+    _serve(() => http.Response('', 404));
+    await _open(t, () async => AutoPayMandate.off,
+        consent: () async => const AutoPayConsent(
+            version: 'v1',
+            checkboxes: [(key: 'k', text: 'I agree.')],
+            termsUrl: 'https://club.example/autopay-terms'));
+    await _setUp(t);
+
+    await t.tap(find.text('Read the Recurring Billing Terms and Cancellation Policy'));
+    await t.pumpAndSettle();
+    expect(_opened, [Uri.parse('https://club.example/autopay-terms')]);
+    expect(find.text('What gets charged'), findsNothing,
+        reason: 'the club\'s own page, not the built-in summary');
+  });
+
+  testWidgets('the plan can be changed while on, keeping the card', (t) async {
+    var m = _visa;
+    final calls = _serve(() {
+      m = const AutoPayMandate(AutoPayState.active,
+          brand: 'Visa', last4: '4242', invoiceTypes: ['Monthly'], perChargeCap: 90);
+      return _ok();
+    });
+    await _open(t, () async => m);
+
+    await t.ensureVisible(find.text('Change what it pays'));
+    await t.tap(find.text('Change what it pays'));
+    await t.pumpAndSettle();
+    expect(find.text('Change Auto Pay'), findsOneWidget);
+    expect(find.text('170.00'), findsOneWidget, reason: 'the current limit is filled in');
+
+    await t.enterText(find.byType(TextField), '90');
+    await t.tap(find.text('Registration'));
+    await t.pump();
+    await t.tap(find.text('Save changes'));
+    await t.pumpAndSettle();
+
+    expect(calls.single.$1, '/AutoPay/UpdateSettings');
+    expect(calls.single.$2, {'invoiceTypes': ['Monthly'], 'perChargeCap': 90});
+    expect(find.text('Review and agree'), findsNothing, reason: 'same card, no new agreement');
+    expect(find.text('Auto Pay updated. Your card stays the same.'), findsOneWidget);
+  });
 }
+

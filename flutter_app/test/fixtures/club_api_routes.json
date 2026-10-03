@@ -17,8 +17,26 @@
  "/Attendance/Add": [
   "POST"
  ],
+ "/Attendance/Centres": [
+  "GET"
+ ],
+ "/Attendance/ManualAdd": [
+  "POST"
+ ],
+ "/Attendance/People": [
+  "GET"
+ ],
+ "/Attendance/TrainingTimes": [
+  "GET"
+ ],
+ "/AutoPay/AllowedInvoiceTypes": [
+  "GET"
+ ],
  "/AutoPay/Callback": [
   "POST"
+ ],
+ "/AutoPay/ConsentContent": [
+  "GET"
  ],
  "/AutoPay/Disable": [
   "POST"
@@ -38,6 +56,9 @@
  "/AutoPay/Status": [
   "GET"
  ],
+ "/AutoPay/UpdateSettings": [
+  "POST"
+ ],
  "/Bcpg/Callback": [
   "POST"
  ],
@@ -48,6 +69,21 @@
   "GET"
  ],
  "/Bcpg/VerifyPayment/{referenceId}": [
+  "GET"
+ ],
+ "/Chat/MarkRead/{groupId}": [
+  "POST"
+ ],
+ "/Chat/Reply": [
+  "POST"
+ ],
+ "/Chat/Start": [
+  "POST"
+ ],
+ "/Chat/Thread/{groupId}": [
+  "GET"
+ ],
+ "/Chat/Threads": [
   "GET"
  ],
  "/ClassBooking/BookNow": [

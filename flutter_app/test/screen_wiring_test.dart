@@ -130,6 +130,7 @@ const _expectedServices = <String, List<String>>{
     'AutoPay.cancel',
     'AutoPay.pause',
     'AutoPay.resume',
+    'AutoPay.updateSettings',
     'AutoPay.family',
   ],
   'notification_settings_screen': ['NotificationService.sendTestAlert'],

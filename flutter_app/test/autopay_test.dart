@@ -6,7 +6,6 @@ import 'package:http/testing.dart';
 
 import 'package:dclix_app/services/api_service.dart';
 import 'package:dclix_app/services/autopay.dart';
-import 'package:dclix_app/services/user_session.dart';
 
 http.Response _json(Object body, [int status = 200]) => http.Response(
     jsonEncode(body), status,
@@ -221,72 +220,82 @@ void main() {
     }
   });
 
-  group('the club\'s invoice types', () {
-    final session = UserSession.instance;
-    late Map<String, dynamic>? saved;
-    setUp(() => saved = session.authData);
-    tearDown(() => session.authData = saved);
-
-    test('come from the sign-in payload, in the club\'s order', () {
-      session.authData = {
-        'autoPayAllowedInvoiceTypes': ['Monthly', 'Registration']
-      };
-      expect(AutoPay.clubInvoiceTypes(), ['Monthly', 'Registration']);
-    });
-
-    test('blank, repeated and non-text entries are dropped', () {
-      session.authData = {
-        'autoPayAllowedInvoiceTypes': [' Monthly ', '', '  ', null, 7, 'Registration', 'Monthly']
-      };
-      expect(AutoPay.clubInvoiceTypes(), ['Monthly', 'Registration']);
-    });
-
-    test('anything but a list, or no session, is "the club sent none"', () {
-      for (final data in <Map<String, dynamic>?>[
-        null,
-        {},
-        {'autoPayAllowedInvoiceTypes': null},
-        {'autoPayAllowedInvoiceTypes': 'Monthly'},
-      ]) {
-        session.authData = data;
-        expect(AutoPay.clubInvoiceTypes(), isEmpty, reason: '$data');
-      }
-    });
-  });
-
   group('invoice type choices', () {
-    tearDown(() => UserSession.instance.authData = null);
-
-    test('the club\'s own list wins, and nothing is fetched', () async {
-      var fetched = false;
-      ApiService.client = MockClient((_) async {
-        fetched = true;
-        return _json(_ok([]));
+    test('the club\'s portal list from /AutoPay/AllowedInvoiceTypes wins', () async {
+      final asked = <String>[];
+      ApiService.client = MockClient((req) async {
+        asked.add(req.url.path);
+        expect(req.url.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+        return _json(_ok(['Monthly', 'Registration']));
       });
-      UserSession.instance.authData = {
-        'autoPayAllowedInvoiceTypes': ['Monthly', 'Registration']
-      };
       expect(await AutoPay.invoiceTypeChoices(), ['Monthly', 'Registration']);
-      expect(fetched, isFalse);
+      expect(asked, ['/AutoPay/AllowedInvoiceTypes'], reason: 'no academy listing needed');
     });
 
-    test('a club that sent none offers every type the academy lists', () async {
-      ApiService.client = MockClient((req) async {
-        expect(req.url.path, '/Listing/InvoceTypes');
-        return _json(_ok([
-          {'id': 1, 'text': 'Monthly'},
-          {'id': 2, 'text': 'Grading'},
-          {'id': 3, 'text': ' '},
-        ]));
-      });
-      UserSession.instance.authData = {};
+    test('a club with no list set offers every type the academy lists', () async {
+      ApiService.client = MockClient((req) async => switch (req.url.path) {
+            '/AutoPay/AllowedInvoiceTypes' => _json(_ok([])),
+            '/Listing/InvoceTypes' => _json(_ok([
+                {'id': 'Monthly', 'text': 'Monthly'},
+                {'id': 'Grading', 'text': 'Grading'},
+                {'id': '', 'text': ' '},
+              ])),
+            _ => http.Response('', 404),
+          });
       expect(await AutoPay.invoiceTypeChoices(), ['Monthly', 'Grading']);
     });
 
-    test('a failed listing offers no choice rather than failing the setup', () async {
-      ApiService.client = MockClient((_) async => http.Response('', 500));
-      UserSession.instance.authData = {};
+    test('when the club list cannot be read, no choice is offered rather than a guess',
+        () async {
+      // Offering every academy type here is what made Enable refuse with "not allowed for
+      // auto pay by this club": the club list is the authority, so without it, ask nothing.
+      ApiService.client = MockClient((req) async => req.url.path == '/Listing/InvoceTypes'
+          ? _json(_ok([{'id': 'Grading', 'text': 'Grading'}]))
+          : http.Response('', 500));
       expect(await AutoPay.invoiceTypeChoices(), isEmpty);
     });
+  });
+
+  group('consent content', () {
+    test('GET /AutoPay/ConsentContent gives the version, the boxes and the terms link',
+        () async {
+      ApiService.client = MockClient((req) async {
+        expect(req.url.path, '/AutoPay/ConsentContent');
+        expect(req.url.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+        return _json(_ok({
+          'version': 'v3',
+          'checkboxes': [
+            {'key': 'cardholder', 'text': 'I am the cardholder.'},
+            {'key': 'terms', 'text': 'I agree to the terms.'},
+            {'key': '', 'text': ''},
+          ],
+          'termsUrl': 'https://example.com/terms',
+        }));
+      });
+      final c = await AutoPay.consent();
+      expect(c.version, 'v3');
+      expect(c.checkboxes.map((b) => b.key), ['cardholder', 'terms'],
+          reason: 'a box with no text cannot be agreed to');
+      expect(c.termsUrl, 'https://example.com/terms');
+    });
+
+    test('a reply that is not the agreement is an error, never an empty agreement',
+        () async {
+      ApiService.client = MockClient((_) async => _json(_ok(null)));
+      expect(AutoPay.consent(), throwsA(anything));
+    });
+  });
+
+  test('UpdateSettings changes the plan in place', () async {
+    late http.Request sent;
+    ApiService.client = MockClient((req) async {
+      sent = req;
+      return _json(_ok('Updated'));
+    });
+    await AutoPay.updateSettings(invoiceTypes: ['Monthly'], perChargeCap: 90);
+    expect(sent.method, 'POST');
+    expect(sent.url.path, '/AutoPay/UpdateSettings');
+    expect(sent.url.origin, Uri.parse(ApiService.boostBaseUrl).origin);
+    expect(jsonDecode(sent.body), {'invoiceTypes': ['Monthly'], 'perChargeCap': 90});
   });
 }

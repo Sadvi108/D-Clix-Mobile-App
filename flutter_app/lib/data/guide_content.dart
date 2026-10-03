@@ -188,7 +188,7 @@ const kGuideSteps = <GuideStep>[
       GuideDetail(1, 'Turn it on',
           'Flip the Auto Pay switch. Tick the types of invoice it should pay — your academy decides which are on offer — and set a limit per invoice: an invoice above it is left for you to pay. If more than one member of your family trains at the academy, everyone is covered together.'),
       GuideDetail(2, 'Review and agree',
-          'Check the summary, then tick the box to agree to the Recurring Billing Terms and Cancellation Policy. Tap the policy\'s name to read it first. Going back from this page leaves Auto Pay off.'),
+          'Check the summary, tick every box of your academy\'s agreement, then tap Subscribe. Tap "Read the Recurring Billing Terms and Cancellation Policy" to read the full terms first. Going back from this page leaves Auto Pay off.'),
       GuideDetail(3, 'Save your card on Boost',
           'You are taken to Boost\'s secure page to enter your card and confirm it with the OTP from your bank. D-CLIX never sees your card number. Boost checks the card with a RM 1.00 hold that is voided, not charged.'),
       GuideDetail(4, 'Pause and resume',
@@ -198,6 +198,7 @@ const kGuideSteps = <GuideStep>[
     ],
     tips: [
       'Tap your card on the Auto Pay screen to save a different one. You agree to the terms again for the new card.',
+      'Tap "Change what it pays" to change the invoice types or your limit per invoice. Your card stays the same.',
       'Tap Disable to turn Auto Pay off and remove the card. After that you pay from Fees Due as before.',
       'You can still pay any invoice yourself from Fees Due, whether Auto Pay is on, paused or off. Auto Pay skips an invoice you have already paid.',
     ],

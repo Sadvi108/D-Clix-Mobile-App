@@ -7,7 +7,7 @@ import 'user_session.dart';
 /// Auto Pay: a debit or credit card the member saves once on Boost's page. A server job
 /// then pays that member's pending invoices with it.
 ///
-/// Club.Api's contract (UAT swagger, 2026-10-02). The app sends only its bearer token; the
+/// Club.Api's contract (UAT swagger, 2026-10-03). The app sends only its bearer token; the
 /// merchant secret stays on the server:
 ///
 ///   GET  /AutoPay/Status   -> data: {enabled, status, cardBrand, cardLast4, cardExpMonth,
@@ -20,9 +20,12 @@ import 'user_session.dart';
 ///        control back. Every family member is covered; there is no per-member field.
 ///   POST /AutoPay/Pause, POST /AutoPay/Resume (no body): hold payments, keeping the card.
 ///   POST /AutoPay/Disable  -> unlinks the card; turning it on again means entering a card again.
-///
-/// The club's own settings come with sign-in, not from /AutoPay: `autoPayAllowedInvoiceTypes`
-/// in [UserSession.authData] — see [AutoPay.clubInvoiceTypes].
+///   GET  /AutoPay/AllowedInvoiceTypes -> data: string[], the types the club allows in its
+///        portal. Enable refuses any other type.
+///   GET  /AutoPay/ConsentContent -> data: {version, checkboxes: [{key, text}], termsUrl}, the
+///        agreement the member ticks before Boost; Enable sends back its version.
+///   POST /AutoPay/UpdateSettings body {invoiceTypes, perChargeCap}: change the plan while on,
+///        keeping the card.
 ///
 /// Charging the saved card is the server's job, never the app's. /AutoPay is served by UAT
 /// only, so [ApiService.isBoostPath] sends it there. A 404 reads as "not open yet".
@@ -113,6 +116,33 @@ class AutoPayMandate {
   }
 }
 
+/// The agreement the member ticks before Boost, as the club's server words it.
+class AutoPayConsent {
+  /// Sent back with Enable, so the server records which wording was agreed to.
+  final String? version;
+
+  /// Every box must be ticked. Boxes without text are dropped: nothing to agree to.
+  final List<({String key, String text})> checkboxes;
+  final String? termsUrl;
+
+  const AutoPayConsent({this.version, this.checkboxes = const [], this.termsUrl});
+
+  factory AutoPayConsent.fromJson(Map json) {
+    String? s(Object? v) => v is String && v.trim().isNotEmpty ? v.trim() : null;
+    final boxes = json['checkboxes'];
+    return AutoPayConsent(
+      version: s(json['version']),
+      checkboxes: [
+        if (boxes is List)
+          for (final b in boxes)
+            if (b is Map && s(b['text']) != null)
+              (key: s(b['key']) ?? s(b['text'])!, text: s(b['text'])!),
+      ],
+      termsUrl: s(json['termsUrl']),
+    );
+  }
+}
+
 class AutoPay {
   static const _notYet = BoostPaymentException(
       'Auto Pay is not open yet. Please pay your fees from Fees Due for now.');
@@ -179,6 +209,28 @@ class AutoPay {
     }
   }
 
+  /// Change the invoice types or the limit per invoice while Auto Pay is on. The card stays.
+  static Future<void> updateSettings({List<String>? invoiceTypes, double? perChargeCap}) =>
+      ApiService.post('/AutoPay/UpdateSettings', {
+        if (invoiceTypes != null) 'invoiceTypes': invoiceTypes,
+        if (perChargeCap != null) 'perChargeCap': perChargeCap,
+      });
+
+  /// The agreement to show before Boost. A reply that is not the agreement is an error: an
+  /// empty agreement must never be "agreed" to.
+  static Future<AutoPayConsent> consent() async {
+    final data = unwrapData(await ApiService.get('/AutoPay/ConsentContent'));
+    if (data is! Map) {
+      throw const BoostPaymentException(
+          'The Auto Pay agreement could not be loaded. Please try again.');
+    }
+    return AutoPayConsent.fromJson(data);
+  }
+
+  /// The invoice types the club allows in its portal. Empty when it set none.
+  static Future<List<String>> allowedInvoiceTypes() async =>
+      _names(unwrapData(await ApiService.get('/AutoPay/AllowedInvoiceTypes')));
+
   /// Everyone Auto Pay covers: the signed-in account and its siblings, as the Payments
   /// screen lists them. Siblings are optional — a failed lookup leaves just the account.
   static Future<AutoPayFamily> family() async {
@@ -194,18 +246,17 @@ class AutoPay {
     return out.where((m) => m.id > 0 && m.name.isNotEmpty && seen.add(m.id)).toList();
   }
 
-  /// The invoice types this club lets Auto Pay pay, from the sign-in payload's
-  /// `autoPayAllowedInvoiceTypes` (e.g. ["Monthly", "Registration"]). Empty means the club
-  /// sent none.
-  static List<String> clubInvoiceTypes() =>
-      _names(UserSession.instance.authData?['autoPayAllowedInvoiceTypes']);
-
-  /// The types a member may tick in the setup sheet. The club's own list when it sent one;
-  /// otherwise the club placed no limit, so every type the academy lists (the same
-  /// /Listing/InvoceTypes that Pay Your Dues filters by). A failed listing offers no choice,
-  /// and Enable then leaves the types to the server, rather than blocking the setup.
+  /// The types a member may tick in the setup sheet: the club's portal list. A club that set
+  /// none placed no limit, so every type the academy lists (/Listing/InvoceTypes, the list Pay
+  /// Your Dues filters by). When the club list cannot be read, no choice is offered and Enable
+  /// leaves the types to the server: guessing every academy type is what Enable refuses.
   static Future<List<String>> invoiceTypeChoices() async {
-    final club = clubInvoiceTypes();
+    final List<String> club;
+    try {
+      club = await allowedInvoiceTypes();
+    } catch (_) {
+      return const [];
+    }
     if (club.isNotEmpty) return club;
     try {
       final rows = await RnApi.invoiceTypes();
